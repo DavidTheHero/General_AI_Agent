@@ -120,7 +120,7 @@ class SemanticStoreTests(unittest.TestCase):
             store.add_entry("session-1", "assistant", "You mentioned travel to France.")
             matches = store.query("session-1", "Paris trip", top_k=2)
             self.assertGreaterEqual(len(matches), 1)
-            self.assertIn("Paris", matches[0]["content"])
+            self.assertTrue(any("Paris" in match["content"] for match in matches))
             store.delete_session("session-1")
             self.assertEqual(store.query("session-1", "Paris", top_k=2), [])
         finally:

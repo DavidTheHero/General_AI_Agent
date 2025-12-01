@@ -6,19 +6,20 @@
 - **Backends**: 
   - `fastapi_app.py` exposes `/query` (POST) and `/health`.
   - `flask_app.py` provides a chat UI that forwards requests to FastAPI, maintains session metadata, and offers a Reset button.
-- **Memory**: Structured slots + semantic recall. `memory.AgentMemory` tracks stock/weather/fact/time data; `semantic_memory.py` stores embeddings in SQLite per session.
-- **Observability**: Each `/query` returns `latency_ms` + per-component timings; Flask UI shows a modern chat surface with timing chips and metadata toggles.
+- **Memory**: Structured slots + semantic recall. `memory.AgentMemory` tracks stock/weather/fact/time data; `semantic_memory.py` stores embeddings in SQLite per session; planners add reminders/plan traces to memory.
+- **Observability**: Each `/query` returns `latency_ms`, per-component timings, and a `plan_trace`; the Flask UI shows timing chips, plan trace toggles, and retrieved semantic snippets.
 - **Tests**: `test.py` covers finance helpers, memory utilities, and semantic store basics.
 
 ### 2. Upcoming Enhancements
-1. **Semantic Memory Upgrades**
+1. **Planner & Memory Upgrades**
    - Pluggable embedding backends (local hashed encoder vs. OpenAI, Cohere, Instructor, etc.) with config-driven selection.
    - Administrative APIs/UI toggles to inspect/delete specific semantic entries, export conversation history, and show retrieved snippets inline.
    - Background cleanup jobs (age-based pruning, session archiving) so SQLite/pgvector stores stay lean.
+   - Additional planners (weather workflows, multi-tool intents, reminders) using the same plan→act→reflect pattern introduced for stocks.
 
 2. **Persistent Storage**
    - Replace Flask session storage with Redis or another external store for structured metadata; move semantic embeddings to pgvector/SQLite per user.
-   - Add TTL/retention policies per context block (weather < 24h, facts < 30d, etc.).
+   - Add TTL/retention policies per context block (weather < 24h, facts < 30d, reminders with due dates).
 
 3. **Expanded Tests**
    - Network-mocked tests for each tool + DSPy follow-up classifier.

@@ -1,6 +1,6 @@
 # Assistant Agent
 
-An extensible DSPy-powered assistant that routes user queries to weather, finance, news, facts, and fun tools while keeping a hybrid structured + semantic memory of each conversation. A FastAPI backend runs the model, and a Flask UI provides a modern chat experience.
+An extensible DSPy-powered assistant that routes user queries to weather, finance, news, facts, and fun tools while keeping a hybrid structured + semantic memory of each conversation. A FastAPI backend runs the model, and a Flask UI provides a modern chat experience. Recent updates add a visible plan→act→reflect loop (starting with stock comparisons) so the agent feels less like a thin wrapper and more like an actual autonomous workflow.
 
 ---
 
@@ -32,12 +32,15 @@ Visit `http://localhost:2611` to chat. The UI communicates with FastAPI, which k
 | --- | --- |
 | `fastapi_app.py` | FastAPI API exposing `/query`, `/health`, `/memory/*`. |
 | `flask_app.py`, `templates/`, `static/` | Chat UI that streams messages, shows timing chips, and stores session metadata. |
-| `general_agent.py` | DSPy agent, tool routing, memory usage, profiling hooks. |
+| `general_agent.py` | DSPy agent orchestrator (router + planner registry + profiling). |
+| `agent/signatures.py` | DSPy routing/answer signatures + tool catalog. |
+| `agent/utils.py` | Shared helpers (query splitting, ticker extraction, etc.). |
+| `agent/planners/` | Plan/act/reflect modules (e.g., stock comparison planner). |
 | `memory.py` | Structured memory helper (stock/weather/fact/time contexts). |
 | `semantic_memory.py` | SQLite-backed semantic store for prior conversation snippets. |
 | `tools/` | Individual tool adapters (finance, weather, jokes, etc.). |
 | `profiling.py` | Lightweight timing recorder used across the agent. |
-| `test.py` | Unit tests (finance + memory helpers). |
+| `test.py` | Unit tests (finance, memory helpers, semantic store). |
 | `README.md`, `ROADMAP.md`, `CONTRIBUTING.md` | Docs and roadmap. |
 
 `semantic_memory.db` is generated locally (and ignored via `.gitignore`). Set `SEMANTIC_DB_PATH` to relocate it.
@@ -49,10 +52,11 @@ Visit `http://localhost:2611` to chat. The UI communicates with FastAPI, which k
 The assistant blends deterministic metadata with semantic recall:
 
 - **Structured map** – `memory.AgentMemory` tracks tool-specific state. Every `/query` accepts a `metadata` payload and returns the updated map so clients can persist per-session context.
-- **Semantic backlog** – `SemanticMemoryStore` embeds each turn into SQLite (hashed bag-of-words) keyed by `session_id`. Similar snippets are prepended to DSPy router prompts so ambiguous follow-ups (“compare them again”) have context.
+- **Semantic backlog** – `SemanticMemoryStore` embeds each turn into SQLite (hashed bag-of-words) keyed by `session_id`. Similar snippets are prepended to DSPy router prompts so ambiguous follow-ups (“compare them again”) have context, and the retrieved snippets + planner trace are included in metadata for debugging.
 - **API helpers** – FastAPI exposes:
   - `POST /memory/reset` with `{ "session_id": "abc" }` to clear structured + semantic state for a session.
   - `POST /memory/search` with `{ "session_id": "abc", "query": "travel plans" }` to inspect recalled snippets without running the agent.
+- **Plan/act/reflect** – Planners (starting with `StockComparisonPlanner`) detect complex queries, build execution steps, call the relevant tools, then reflect (e.g., store reminders about the winning stock). Each response returns a `plan_trace` so you can inspect the agent cycle, and more planners can be added under `agent/planners/`.
 - **Response style** – Add `"response_mode": "api"` to metadata for concise tool-like replies; default `"natural"` returns conversational prose.
 
 Schema overview:

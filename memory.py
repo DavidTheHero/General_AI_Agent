@@ -29,7 +29,9 @@ _MEMORY_TEMPLATE: Dict[str, Any] = {
         "last_time_result": None,
         "last_conversion": None,
     },
-    "user_profile": {},
+    "user_profile": {
+        "reminders": [],
+    },
 }
 
 
@@ -160,6 +162,17 @@ class AgentMemory:
     def update_user_profile(self, updates: Dict[str, Any]) -> None:
         profile = self._data.setdefault("user_profile", {})
         profile.update(updates)
+
+    def add_user_reminder(self, text: str, metadata: Optional[Dict[str, Any]] = None) -> None:
+        profile = self._data.setdefault("user_profile", {})
+        reminders = profile.setdefault("reminders", [])
+        reminders.append(
+            {
+                "text": text,
+                "metadata": metadata or {},
+                "timestamp": _utcnow_iso(),
+            }
+        )
 
 
 __all__ = ["AgentMemory", "default_memory"]
