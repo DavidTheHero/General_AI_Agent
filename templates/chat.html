@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Assistant Agent</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='chat.css') }}">
+    <script>
+        window.AGENT_CONFIG = {
+            chatEndpoint: "{{ url_for('chat_message') }}",
+            resetUrl: "{{ url_for('reset_chat') }}"
+        };
+    </script>
+    <script defer src="{{ url_for('static', filename='chat.js') }}"></script>
+</head>
+<body>
+    <div class="app-shell">
+        <header>
+            <div>
+                <h1>Assistant Agent</h1>
+                <small class="subtitle">Ask anything, remember everything.</small>
+            </div>
+            <span class="status-pill">Live</span>
+        </header>
+        <div class="chat-box" id="chat-box">
+            {% if not conversation %}
+                <div class="message system">
+                    <strong>System</strong>
+                    <p>No messages yet. Ask a question below!</p>
+                </div>
+            {% endif %}
+            {% for item in conversation %}
+                <div class="message user">
+                    <strong>You</strong>
+                    <p>{{ item.query }}</p>
+                </div>
+                <div class="message assistant">
+                    <strong>Assistant</strong>
+                    {% if item.raw.error %}
+                        <p class="error">{{ item.raw.error }}</p>
+                    {% else %}
+                        {% if item.raw.responses %}
+                            {% for resp in item.raw.responses %}
+                                <p>{{ resp.answer }}</p>
+                            {% endfor %}
+                        {% else %}
+                            <p>{{ item.raw.answer }}</p>
+                        {% endif %}
+                        <div class="meta-row">
+                            <small>Tools: {{ item.raw.usage }} | Tokens: {{ item.raw.token_usage }}</small>
+                            {% set timing_map = item.raw.timings or (item.raw.metadata.timings if item.raw.metadata) %}
+                            {% if timing_map %}
+                                <details>
+                                    <summary>Timings</summary>
+                                    <ul>
+                                        {% for key, stats in timing_map.items() %}
+                                        <li>{{ key }} – avg {{ stats.avg_ms }}ms ({{ stats.count }}x)</li>
+                                        {% endfor %}
+                                    </ul>
+                                </details>
+                            {% endif %}
+                        </div>
+                    {% endif %}
+                </div>
+            {% endfor %}
+        </div>
+        <div class="composer">
+            <form method="post" id="chat-form">
+                <textarea id="query-input" name="query" placeholder="Type your message here..." onkeydown="if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); document.getElementById('send-btn').click(); }"></textarea>
+                <div class="actions">
+                    <div class="button-row">
+                        <button type="submit" id="send-btn" class="primary-btn">Send</button>
+                        <button type="submit" class="ghost-btn" form="reset-form">Reset conversation</button>
+                    </div>
+                    <p class="meta">
+                        API endpoint: <code><a href="{{ url_for('query_agent') }}">/query</a></code>
+                    </p>
+                </div>
+            </form>
+        </div>
+    </div>
+    <form method="post" action="{{ url_for('reset_chat') }}" id="reset-form"></form>
+</body>
+</html>

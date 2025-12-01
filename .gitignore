@@ -1,0 +1,24 @@
+# Bytecode / caches
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.pytest_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+.env
+
+# Editor / OS files
+.DS_Store
+Thumbs.db
+
+# Local data artifacts
+semantic_memory.db
+*.sqlite
+*.db
+archive/
+.claude
