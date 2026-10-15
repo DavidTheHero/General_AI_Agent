@@ -1,0 +1,15 @@
+{
+  "symbols": ["SPY", "AAPL"],
+  "interval": "30m",
+  "initial_cash": 100000,
+  "strategy": {
+    "kind": "ollama",
+    "slow_window": 12,
+    "target_gross_weight": 0.9,
+    "model": "llama3.1:8b-instruct-q4_K_M",
+    "ollama_host": "http://localhost:11434",
+    "model_timeout_seconds": 30
+  },
+  "risk": {"max_position_weight": 0.5, "daily_loss_limit": 0.05, "max_consecutive_decision_errors": 3},
+  "costs": {"commission_bps": 1, "slippage_bps": 2}
+}

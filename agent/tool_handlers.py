@@ -198,7 +198,7 @@ class FactLookupHandler(ToolHandler):
                     f"Snippet: {fact['answer']}"
                 )
                 with agent._profile_step("lm_tool_refiner"):
-                    refined = agent.tool_refiner(query=query, context=context).answer
+                    refined = agent.tool_refiner.invoke({"query": query, "context": context}).answer
                 link = f" ({fact['url']})" if fact.get("url") else ""
                 return f"{refined or fact['answer']}{link}"
             except FactLookupError as exc:

@@ -1,133 +1,178 @@
 # Assistant Agent
 
-An extensible DSPy-powered assistant that routes user queries to weather, finance, news, facts, and fun tools while keeping a hybrid structured + semantic memory of each conversation. A FastAPI backend runs the model, and a Flask UI provides a modern chat experience. Recent updates add a visible plan→act→reflect loop (starting with stock comparisons) so the agent feels less like a thin wrapper and more like an actual autonomous workflow.
-
----
+A Node.js backend and React chat frontend powered by LangChain.js and local Ollama. The assistant routes questions to weather, finance, news, facts, arithmetic, time, holidays, and fun tools. Chat uses a bounded agent loop with tool observations and an action trace. Structured context and SQLite semantic recall support follow-up questions.
 
 ## Quick Start
 
+Requirements: Node.js **22.13+** (24 LTS recommended), npm, and a running [Ollama](https://ollama.com/) server. Finance tools also require Python **3.11+** for the local `yfinance` MCP server.
+
 ```bash
-git clone <repo-url>
-cd APPS
-
+npm ci
 python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-# Start the FastAPI API (default port 2610)
-uvicorn fastapi_app:app --host 0.0.0.0 --port 2610 --reload
-
-# Start the Flask UI (in a new shell)
-export AGENT_API_URL=http://localhost:2610/query
-python flask_app.py
+.venv/bin/python -m pip install -r backend/finance/requirements.txt
+.venv/bin/python -m pip install -e '.[mcp]'
+cp .env.example .env
+ollama pull llama3.1:8b-instruct-q4_K_M
+npm run dev
 ```
 
-Visit `http://localhost:2611` to chat. The UI communicates with FastAPI, which keeps the DSPy model and memory in-process.
+Start Ollama separately with `ollama serve` if it is not already running. Open **http://localhost:2611**. Express runs on port 2610; Vite proxies the React frontend's API requests to it. Only the backend talks to Ollama and external tool services.
 
----
+For separate development processes:
+
+```bash
+npm run dev:backend
+npm run dev:frontend
+```
+
+## Python Intraday Trading Framework
+
+The [`trading_agent/`](trading_agent/README.md) package runs autonomous Yahoo Finance intraday simulations with configurable rule or local Ollama policies. It tracks portfolio P&L, execution costs, drawdown and exposure, then generates executive reports, charts and audit ledgers automatically. Use it through the CLI or the integrated trading MCP server and React dashboard. Replay and delayed near-real-time polling follow New York market sessions, including holidays and early closes.
+
+```bash
+.venv/bin/python -m pip install -e .
+.venv/bin/python -m trading_agent demo
+.venv/bin/python -m trading_agent backtest --config examples/trading_sma.json
+```
+
+The CLI prints the generated `report.html` path. See the [framework guide](trading_agent/README.md) for polling, AI policies, configuration, execution assumptions and tests. This package simulates orders; it does not connect to a broker.
+
+## Trading MCP, Runtime & Dashboard
+
+Start the independent runtime in another terminal, alongside `npm run dev`:
+
+```bash
+npm run trading:runtime
+```
+
+Open **http://localhost:2611** → **Trading desk**. Run a synthetic demo, replay completed Yahoo sessions, or select **Watch Yahoo sessions** and **Continue across future sessions**. The dashboard refreshes every three seconds; equity, positions, recent fills and policy decisions update after completed bars. Reports and CSV/JSON/PNG exports appear automatically. Closing the page or disconnecting MCP does not cancel jobs.
+
+Chat can also request “Run a synthetic trading demo” or “Start a continuous simulated watch of SPY and AAPL using SMA.” It exposes four MCP tools: `trading_start`, `trading_status`, `trading_list`, and `trading_stop`. Starting returns a saved job ID immediately, followed by a dashboard link. This is a separate MCP server from the 18 read-only finance tools. Other local MCP hosts can launch `.venv/bin/python -m trading_agent.mcp_server` with this repository as their working directory; `npm run mcp:trading` also runs it over stdio.
+
+The execution service binds to `127.0.0.1:2612`, requires a local generated token, saves jobs in SQLite, and runs up to two worker processes. MCP is a control interface; it does not own the workers. See [deployment instructions](deploy/README.md) to keep both runtime and built dashboard running through macOS launchd. Continuous watch waits across market closures. A runtime crash marks unfinished jobs **interrupted** for review; intraday portfolio recovery is not implemented. These local services have no multi-user authorization and are intended for one user's computer.
+
+## Production Build
+
+```bash
+npm run build
+npm start
+```
+
+Express serves both the built React UI and API at **http://localhost:2610**. The server binds to localhost. Ollama must remain running separately; Node.js manages application requests, while Ollama loads and executes the model.
 
 ## Project Structure
 
 | Path | Purpose |
 | --- | --- |
-| `fastapi_app.py` | FastAPI API exposing `/query`, `/health`, `/memory/*`. |
-| `flask_app.py`, `templates/`, `static/` | Chat UI that streams messages, shows timing chips, and stores session metadata. |
-| `general_agent.py` | DSPy agent orchestrator (router + planner registry + profiling). |
-| `agent/signatures.py` | DSPy routing/answer signatures + tool catalog. |
-| `agent/utils.py` | Shared helpers (query splitting, ticker extraction, etc.). |
-| `agent/planners/` | Plan/act/reflect modules (e.g., stock comparison planner). |
-| `memory.py` | Structured memory helper (stock/weather/fact/time contexts). |
-| `semantic_memory.py` | SQLite-backed semantic store for prior conversation snippets. |
-| `tools/` | Individual tool adapters (finance, weather, jokes, etc.). |
-| `profiling.py` | Lightweight timing recorder used across the agent. |
-| `test.py` | Unit tests (finance, memory helpers, semantic store). |
-| `README.md`, `ROADMAP.md`, `CONTRIBUTING.md` | Docs and roadmap. |
+| `trading_agent/`, `examples/trading_*.json` | Python intraday agent, policies, portfolio metrics, reports, and configuration examples. |
+| `trading_agent/runtime.py`, `trading_agent/mcp_server.py`, `backend/trading/` | Durable job service, trading MCP tools and Node integration. |
+| `frontend/src/TradingDashboard.jsx`, `deploy/` | Live simulation dashboard and macOS service setup. |
+| `backend/server.js` | Server startup and shutdown. |
+| `backend/app.js` | Express routes, input validation, and static React serving. |
+| `backend/agent.js`, `backend/agent-loop.js` | Session context, model/tool loop, stop conditions, and profiling. |
+| `backend/llm.js` | LangChain.js prompt chains and validated structured model outputs. |
+| `backend/tools.js`, `backend/calculator.js` | JavaScript tool adapters and safe arithmetic parser. |
+| `backend/finance/server.py` | Python MCP server exposing yfinance search, history, and quotes. |
+| `backend/finance/client.js`, `backend/finance/cli.js` | Node MCP client and standalone command-line client. |
+| `backend/memory.js` | Structured context and SQLite semantic recall. |
+| `backend/tests/` | Node unit and API integration tests. |
+| `frontend/src/` | React chat, CSS, and component tests. |
+| `frontend/vite.config.js` | Development proxy, React build, and test configuration. |
 
-`semantic_memory.db` is generated locally (and ignored via `.gitignore`). Set `SEMANTIC_DB_PATH` to relocate it.
+The previous Python implementation (`*.py`, `agent/`, `tools/`, `templates/`, and `static/`) remains as a migration reference. It is not used by `npm run dev` or `npm start`.
 
----
+## Finance Workspace
 
-## Memory & Context
+Run `npm run dev`, open the React UI at `http://localhost:2611`, and select **Finance workspace**. Choose a workflow, enter its inputs, and generate a report:
 
-The assistant blends deterministic metadata with semantic recall:
+- **Company research:** profile, valuation, quarterly revenue/margins/cash flow, analyst targets, events and news.
+- **Company comparison:** two to four tickers, common-date adjusted returns and financial metrics for identical fiscal quarter ends.
+- **Earnings explorer:** quarterly statements, revenue changes, margins and cash-flow charts.
+- **ETF overlap:** two funds, shared available holdings and weight coverage. Overlap is a lower bound because Yahoo supplies selected holdings.
+- **Stock screener:** sector, positive earnings, maximum P/E and debt/equity percentage (100 means 1× equity), with filter explanations.
+- **Portfolio currency:** quantities and display currency; optionally enter per-share cost basis and purchase date to separate stock and FX effects. Use split-adjusted cost basis; dividends are excluded. Holdings are not persisted.
+- **Market morning brief:** selected date, US benchmark snapshot, earnings/economic calendars, news and optional watchlist. Generated on demand; scheduling and delivery are deferred.
 
-- **Structured map** – `memory.AgentMemory` tracks tool-specific state. Every `/query` accepts a `metadata` payload and returns the updated map so clients can persist per-session context.
-- **Semantic backlog** – `SemanticMemoryStore` embeds each turn into SQLite (hashed bag-of-words) keyed by `session_id`. Similar snippets are prepended to DSPy router prompts so ambiguous follow-ups (“compare them again”) have context, and the retrieved snippets + planner trace are included in metadata for debugging.
-- **API helpers** – FastAPI exposes:
-  - `POST /memory/reset` with `{ "session_id": "abc" }` to clear structured + semantic state for a session.
-  - `POST /memory/search` with `{ "session_id": "abc", "query": "travel plans" }` to inspect recalled snippets without running the agent.
-- **Plan/act/reflect** – Planners (starting with `StockComparisonPlanner`) detect complex queries, build execution steps, call the relevant tools, then reflect (e.g., store reminders about the winning stock). Each response returns a `plan_trace` so you can inspect the agent cycle, and more planners can be added under `agent/planners/`.
-- **Response style** – Add `"response_mode": "api"` to metadata for concise tool-like replies; default `"natural"` returns conversational prose.
+Reports include observation dates, underlying MCP responses, source links and partial-data warnings. Missing values remain unavailable. Price snapshots are daily observations; financial statement currencies remain explicit. The reference timezone labels the requested calendar date; unknown event times are not converted.
 
-Schema overview:
+Chat also supports workspace requests, for example “Give me a company research brief on Nvidia.” Forms provide direct, validated inputs without requiring model routing. `POST /finance/workspace` accepts a workflow request and returns the same report; for example `{"workflow":"research","symbol":"NVDA"}`. Implementation lives in `backend/finance/workspace.js`, `frontend/src/FinanceWorkspace.jsx` and `frontend/src/FinanceReport.jsx`.
 
-```jsonc
-{
-  "stock_context": {
-    "last_comparison": {"entries": [], "days": 0, "timestamp": "", "symbols": []},
-    "comparison_history": [],
-    "recent_symbols": []
-  },
-  "weather_context": {"last_location": {}, "last_conditions": {}, "last_updated": ""},
-  "fact_context": {"recent_facts": []},
-  "time_context": {
-    "last_timezone_request": null,
-    "last_time_result": null,
-    "last_conversion": null
-  },
-  "user_profile": {}
-}
+## Agent Loop
+
+Chat follows **decide → execute → observe → decide**, using local Ollama's validated structured outputs through LangChain with an explicit 16,384-token context window to accommodate tool schemas and observations. Each iteration selects a tool, asks for clarification, or finishes. MCP results and failures are fed back as observations so the model can change its lookup strategy instead of stopping after one empty search. Company briefs first call `resolve_company` with separate name and country inputs. The resolver searches the name, falls back to stock lookup and a fuller-name search when needed, and checks at most three candidate profiles against company name, country and provider symbol. It returns a resolved identity, ambiguity, no verified match or provider unavailability. Only a resolved identity enables report generation. Tool names are constrained in the model output schema at every step. Other company research, earnings and comparison reports require metadata inspection before execution; matching those identities to the request remains the model's responsibility.
+
+The host permits at most **six tool actions per message segment**, blocks identical repeated calls and supplies one corrective observation before stopping continued repetition, rejects unknown tools, and stops cleanly on invalid planner output. Workspace and resolver actions can perform several internal MCP requests; the resolver records those attempts in the action trace. Company info is reduced to explicit identity fields for model context. Other tool responses sent to the model are limited to 2,500 characters each and marked when truncated; complete reports remain available in the UI. For a company or benchmark brief, a generated report satisfies the explicit completion condition and stops the loop without another model call. Partial results and provider availability are disclosed. Educational answers can finish without tools; current-data requests require evidence in the loop prompt.
+
+Expand **Agent actions** under an answer to inspect executed tools and stop reasons (`metadata.agent_trace`). Usage and timing fields remain compatible with the existing API. The direct Finance workspace forms keep their deterministic calculations. Trading simulations run in the separate job service; chat retains their IDs for status follow-ups. Chat execution itself has no durable checkpoint or nested agents.
+
+## Context-aware Conversation
+
+Short follow-ups such as “what about that?” are rewritten into standalone requests using recent messages from the same session. Explicit inputs remain user-provided; missing essential inputs produce a targeted clarification. Original messages stay in chat/history, while `metadata.query_rewrites` records the effective requests. Rewriting falls back to the original message if its model call fails.
+
+“How is the stock market today?” uses the on-demand US benchmark brief without requiring a ticker. “Surprise me” continues that market request, including older conversations that previously asked for a ticker. “Try again” repeats the last effective request. Other regions and historical dates go through normal routing instead of silently defaulting to today's US market.
+
+Tool failures return an honest availability message with ways to continue; technical details remain in `metadata.tool_errors`. Rewriting cannot restore an unavailable upstream service or provide prices without evidence.
+
+## Finance MCP Server and Client
+
+The server now exposes **18 MCP tools** across yfinance data families: fundamentals, statements, actions, estimates, holders, funds, options, calendars, regional markets, sectors, screeners, batch/intraday history, and bounded streaming. See [the complete capability guide](backend/finance/CAPABILITIES.md) for tool names, datasets, examples, limits, and administrative exclusions. Other MCP hosts can also read `yfinance://capabilities`.
+
+```text
+React → Express/LangChain.js → Node MCP client → stdio → Python MCP server → yfinance → Yahoo Finance
 ```
 
-Supply a stable `session_id` when POSTing to `/query` so the same user pulls their context.
+The backend starts the finance server lazily on the first finance request. The MCP connection performs initialization, discovers tools, and calls `search_stocks`, `stock_history`, `stock_quote`, and `exchange_rate`. It stays open for reuse and closes with the backend. Calls are serialized and have a 30-second timeout; a timed-out server is closed and restarted on the next request. Advanced finance chat requests use discovered MCP schemas through the loop’s `mcp.*` actions; non-finance tools still use their existing adapters.
 
----
-
-## Observability & Performance
-
-Profiling is built-in:
-
-- Every `/query` response includes `latency_ms` **and** a `timings` map (also mirrored under `metadata.timings`). Each entry contains `count`, `total_ms`, and `avg_ms` for the component (e.g., `lm_router`, `tool_stock_quote`, `semantic_lookup`).
-- The Flask UI shows each request’s latency chip plus a “Timings” disclosure to inspect per-step averages.
-- `tool_usage` and `token_usage` remain alongside responses for additional visibility.
-
-Use these metrics to spot slow APIs or redundant LM calls before opening PRs.
-
----
-
-## Testing
+You can use the standalone client without Ollama or Express:
 
 ```bash
-python3 -m unittest test
+npm run mcp:finance -- list
+npm run mcp:finance -- stock_quote '{"symbol":"TTWO"}'
+npm run mcp:finance -- stock_history '{"symbol":"TTWO","days":7}'
+npm run mcp:finance -- search_stocks '{"query":"Take-Two Interactive"}'
+npm run mcp:finance -- exchange_rate '{"from_currency":"USD","to_currency":"GBP"}'
 ```
 
-Tests currently cover finance helpers + memory utilities. Please add tests for new tools or agent behaviors when contributing.
+For another MCP host, configure a stdio server with your virtual environment's absolute Python executable as `command` and the absolute path to `backend/finance/server.py` as its sole argument. MCP messages use stdout; logs use stderr. There is no separate HTTP port or remote server to start.
 
----
+After a stock quote, ask “Can you change that to GBP?” The agent converts the saved price using a yfinance FX pair such as `USDGBP=X`, showing both the stock and FX dates. Currency codes are not treated as stock symbols; conversion retains the original quote. Conversations created before this change need a fresh stock quote first.
 
-## Environment Variables
+The server returns unadjusted daily bars (up to 366 trading observations), source, currency, exchange, timezone, and dates. Quote changes are unavailable when there is no previous bar. `yfinance` is unaffiliated with Yahoo and remains subject to Yahoo availability and data-use terms; see the [official project](https://github.com/ranaroussi/yfinance). This integration is intended for personal research use.
 
-| Variable | Description | Default |
+## API & Memory
+
+- `GET /health` returns `{ "status": "ok" }` for the application server; it does not check model readiness.
+- `POST /query` accepts `{ "query": "...", "metadata": { "session_id": "abc" } }`.
+- `POST /memory/search` accepts `{ "session_id": "abc", "query": "Paris", "top_k": 5 }`.
+- `POST /memory/reset` accepts `{ "session_id": "abc" }` and clears that session's semantic history. Without a session ID, it returns default structured context without deleting history.
+- `GET/POST /trading/jobs` lists/starts simulations; `GET /trading/jobs/:id` reads progress, `POST /trading/jobs/:id/stop` cancels, and `GET /trading/jobs/:id/artifacts/:name` serves allowed report files.
+
+Responses retain `answer`, `responses`, `usage`, `token_usage`, `metadata`, `latency_ms`, and `timings`. Token counts are estimates. Set `metadata.response_mode` to `api` for concise answers. Send the returned structured metadata with the next query to preserve stock, weather, fact, time, and reminder context. Use a distinct session ID for each conversation.
+
+React keeps the current conversation and metadata in browser session storage, sends a stable session ID, and clears backend memory when resetting. SQLite stores conversation snippets per session. Routing includes the last four messages so clarification replies retain context, alongside semantic matches. Existing `semantic_memory.db` entries remain readable; the JavaScript store re-embeds text with deterministic hashes for retrieval. No embedding model download is required. Concurrent requests have separate agent state.
+
+## Configuration
+
+Copy `.env.example` to `.env`. Backend scripts load it automatically; Vite reads it for the development proxy.
+
+| Variable | Default | Purpose |
 | --- | --- | --- |
-| `AGENT_API_URL` | Flask UI → FastAPI endpoint. | `http://localhost:2610/query` |
-| `SEMANTIC_DB_PATH` | Path for the SQLite semantic store. | `semantic_memory.db` |
-| `DSPY_MODEL` | DSPy model identifier (e.g., `ollama/llama3.1:8b`). | `ollama/llama3.1:8b-instruct-q4_K_M` |
-| `FLASK_SECRET_KEY` | Session secret for UI. | `dev-secret` (override in prod) |
+| `PORT` | `2610` | Express API and production UI port. |
+| `OLLAMA_HOST` | `http://localhost:11434` | Local Ollama server. |
+| `OLLAMA_MODEL` | `llama3.1:8b-instruct-q4_K_M` | Downloaded Ollama model name. |
+| `SEMANTIC_DB_PATH` | `semantic_memory.db` | SQLite conversation store. |
+| `MCP_PYTHON` | Repository `.venv` Python, otherwise `python3` | Override the MCP server interpreter. |
+| `AGENT_API_URL` | `http://localhost:2610` | Vite API proxy target, without `/query`. |
+| `TRADING_RUNTIME_PORT` | `2612` | Local execution-service port; use the same value for Node/MCP/runtime. |
+| `TRADING_DATA_DIR` | Absolute repository `artifacts/trading/runtime` | Shared job database, local token, logs and report directory. |
 
----
+Ollama must support structured JSON output. Stock quotes and comparisons use the local MCP server and yfinance daily price bars; quote replies identify the source and date, rather than promising real-time prices. External services require internet access and may return availability or rate-limit errors. No tool API keys are needed. Do not commit `.env`, databases, `node_modules/`, or build outputs.
 
-## Contributing
+## Testing & Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow, PR checklist, and environment setup. The short version:
+```bash
+npm test
+npm run build
+```
 
-1. Install deps via `pip install -r requirements.txt`.
-2. Keep tests green (`python3 -m unittest test`).
-3. Reference [ROADMAP.md](ROADMAP.md) when implementing new features.
-4. Don’t commit generated files (`semantic_memory.db`, `__pycache__`, etc.).
-
----
-
-## Roadmap
-
-Upcoming enhancements (persistent stores, improved embeddings, UI observability, deployment) live in [ROADMAP.md](ROADMAP.md). Open an issue or draft PR to discuss any large changes before implementation.
-# General_AI_Agent
+Install the finance Python requirements before testing. Tests mock models and external services, including a real MCP stdio connection to a Python server with fake Yahoo data, so they do not require Ollama or network access. They cover tool behavior, memory persistence and session isolation, stock plans and follow-ups, API validation, and React interaction. See [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md), and [ROADMAP.md](ROADMAP.md) for contributor guidance and planned work.

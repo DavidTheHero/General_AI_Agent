@@ -1,0 +1,11 @@
+{
+  "symbols": ["SPY", "AAPL"],
+  "interval": "5m",
+  "initial_cash": 100000,
+  "strategy": {"kind": "sma", "fast_window": 3, "slow_window": 12, "target_gross_weight": 0.9},
+  "risk": {"max_position_weight": 0.5, "daily_loss_limit": 0.05, "max_consecutive_decision_errors": 3},
+  "costs": {"commission_bps": 1, "slippage_bps": 2, "fixed_fee": 0},
+  "poll_seconds": 60,
+  "data_lag_seconds": 900,
+  "close_grace_seconds": 300
+}

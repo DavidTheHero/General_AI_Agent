@@ -1,8 +1,10 @@
-"""DSPy signatures and tool metadata."""
+"""LangChain output schemas and tool metadata."""
 
 from __future__ import annotations
 
-import dspy
+from typing import Literal
+
+from pydantic import BaseModel, Field
 
 TOOL_DEFINITIONS = [
     ("weather", "Basic current weather via Open-Meteo."),
@@ -27,101 +29,88 @@ def list_available_tools_text() -> str:
     return "\n".join(f"- {name}: {desc}" for name, desc in TOOL_DEFINITIONS)
 
 
-class AssistantRoutingSignature(dspy.Signature):
+class AssistantRoutingSignature(BaseModel):
     """Route user queries to the right capability and provide direct answers when possible."""
 
-    query: str = dspy.InputField(desc="User question or command")
-    available_tools: str = dspy.InputField(
-        desc="List of available tool names and descriptions. Choose from these only."
+    tool_choice: Literal["weather", "topic_summary", "news", "news_api", "calculator", "time_now", "time_convert", "fact_lookup", "stock_quote", "crypto_price", "holiday_lookup", "fun_activity", "fun_joke", "none"] = Field(default="none",
+        description="Return exactly one tool name from available_tools (or 'none')."
     )
-    tool_choice: str = dspy.OutputField(
-        desc="Return exactly one tool name from available_tools (or 'none')."
+    location: str = Field(default="",
+        description="City/region for weather questions; empty when not relevant"
     )
-    location: str = dspy.OutputField(
-        desc="City/region for weather questions; empty when not relevant"
+    topic: str = Field(default="",
+        description="Topic to summarize when the user requests general information"
     )
-    topic: str = dspy.OutputField(
-        desc="Topic to summarize when the user requests general information"
+    news_query: str = Field(default="",
+        description="Keywords for tech/news lookup when the user requests the latest information"
     )
-    news_query: str = dspy.OutputField(
-        desc="Keywords for tech/news lookup when the user requests the latest information"
+    news_language: str = Field(default="",
+        description="Language code for international news queries (e.g., en, fr)"
     )
-    news_language: str = dspy.OutputField(
-        desc="Language code for international news queries (e.g., en, fr)"
+    calculator_expression: str = Field(default="",
+        description="Math expression to compute when using the calculator tool"
     )
-    calculator_expression: str = dspy.OutputField(
-        desc="Math expression to compute when using the calculator tool"
+    time_timezone: str = Field(default="",
+        description="Timezone for current time requests (e.g., 'Europe/London')"
     )
-    time_timezone: str = dspy.OutputField(
-        desc="Timezone for current time requests (e.g., 'Europe/London')"
+    convert_timestamp: str = Field(default="",
+        description="ISO timestamp to convert when performing timezone conversions"
     )
-    convert_timestamp: str = dspy.OutputField(
-        desc="ISO timestamp to convert when performing timezone conversions"
+    convert_from_timezone: str = Field(default="",
+        description="Source timezone for conversions"
     )
-    convert_from_timezone: str = dspy.OutputField(
-        desc="Source timezone for conversions"
+    convert_to_timezone: str = Field(default="",
+        description="Target timezone for conversions"
     )
-    convert_to_timezone: str = dspy.OutputField(
-        desc="Target timezone for conversions"
+    fact_topic: str = Field(default="",
+        description="Specific topic for fact lookup or instant answer"
     )
-    fact_topic: str = dspy.OutputField(
-        desc="Specific topic for fact lookup or instant answer"
+    stock_symbol: str = Field(default="",
+        description="Ticker symbol when retrieving stock quotes"
     )
-    stock_symbol: str = dspy.OutputField(
-        desc="Ticker symbol when retrieving stock quotes"
+    crypto_asset: str = Field(default="",
+        description="Cryptocurrency identifier for price lookups"
     )
-    crypto_asset: str = dspy.OutputField(
-        desc="Cryptocurrency identifier for price lookups"
+    crypto_currency: str = Field(default="",
+        description="Fiat currency to compare crypto price against (e.g., USD)"
     )
-    crypto_currency: str = dspy.OutputField(
-        desc="Fiat currency to compare crypto price against (e.g., USD)"
+    holiday_country: str = Field(default="",
+        description="Country code for holiday lookup (e.g., US, GB)"
     )
-    holiday_country: str = dspy.OutputField(
-        desc="Country code for holiday lookup (e.g., US, GB)"
+    holiday_year: str = Field(default="",
+        description="Year for holiday lookup, e.g., 2025"
     )
-    holiday_year: str = dspy.OutputField(
-        desc="Year for holiday lookup, e.g., 2025"
+    holiday_month: str = Field(default="",
+        description="Month number for holiday lookup (optional)"
     )
-    holiday_month: str = dspy.OutputField(
-        desc="Month number for holiday lookup (optional)"
+    fun_preference: str = Field(default="",
+        description="Specify 'activity' or 'joke' when requesting something fun"
     )
-    fun_preference: str = dspy.OutputField(
-        desc="Specify 'activity' or 'joke' when requesting something fun"
+    fun_topic: str = Field(default="",
+        description="Optional topic or keyword for fun/joke requests"
     )
-    fun_topic: str = dspy.OutputField(
-        desc="Optional topic or keyword for fun/joke requests"
-    )
-    reasoning: str = dspy.OutputField(desc="Brief reasoning behind the decision")
-    direct_answer: str = dspy.OutputField(
-        desc="Helpful response when no tool call is required"
+    reasoning: str = Field(default="", description="Brief reasoning behind the decision")
+    direct_answer: str = Field(default="",
+        description="Helpful response when no tool call is required"
     )
 
 
-class GeneralAnswerSignature(dspy.Signature):
-    """Fallback signature to provide an answer for non-weather questions."""
+class GeneralAnswerSignature(BaseModel):
+    """Provide a helpful, direct answer to the user query."""
 
-    query: str = dspy.InputField()
-    answer: str = dspy.OutputField()
-
-
-class ToolRefinementSignature(dspy.Signature):
-    """Refine tool outputs into direct answers that address the query."""
-
-    query: str = dspy.InputField(desc="Original user query")
-    context: str = dspy.InputField(desc="Evidence or snippets returned by tools")
-    answer: str = dspy.OutputField()
+    answer: str
 
 
-class FollowupIntentSignature(dspy.Signature):
-    """Decide whether the new query references the previous stock comparison."""
+class ToolRefinementSignature(BaseModel):
+    """Answer the user query using only the supplied tool evidence."""
 
-    previous_summary: str = dspy.InputField(
-        desc="Summary of the last stock comparison, if any."
-    )
-    query: str = dspy.InputField(desc="Current user message.")
-    refers_to_stock_comparison: str = dspy.OutputField(
-        desc="Yes or No: Does the query reference the last stock comparison?"
-    )
+    answer: str
+
+
+class FollowupIntentSignature(BaseModel):
+    """Decide whether the user query references the previous stock comparison."""
+
+    refers_to_stock_comparison: Literal["Yes", "No"]
 
 
 __all__ = [

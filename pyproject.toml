@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "market-session-agent"
+version = "0.1.0"
+description = "Autonomous intraday Yahoo Finance simulation and reporting agents"
+readme = "trading_agent/README.md"
+requires-python = ">=3.11"
+dynamic = ["dependencies"]
+
+[project.scripts]
+intraday-agent = "trading_agent.cli:main"
+
+[project.optional-dependencies]
+mcp = ["mcp>=2.3,<3"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["trading_agent/requirements.txt"]}
+
+[tool.setuptools.packages.find]
+include = ["trading_agent*"]
+exclude = ["trading_agent.tests*"]

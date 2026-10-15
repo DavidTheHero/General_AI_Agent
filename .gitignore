@@ -11,6 +11,8 @@ __pycache__/
 venv/
 env/
 .env
+.env.*
+!.env.example
 
 # Editor / OS files
 .DS_Store
@@ -19,6 +21,18 @@ Thumbs.db
 # Local data artifacts
 semantic_memory.db
 *.sqlite
+*.sqlite-*
 *.db
+*.db-*
+*.log
 archive/
 .claude
+
+# Node / React artifacts
+node_modules/
+frontend/dist/
+coverage/
+
+# Python simulation artifacts
+*.egg-info/
+artifacts/trading/

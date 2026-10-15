@@ -1,38 +1,25 @@
 # Contributing
 
-Thanks for helping improve this assistant! The project is still evolving, so please follow the workflow below to keep changes predictable.
+## Development Workflow
 
-## Development workflow
+1. Install Node.js 22.13+ (24 LTS recommended), install Python 3.11+, run `npm ci`, create `.venv`, install `backend/finance/requirements.txt`, and copy `.env.example` to `.env`.
+2. Start local Ollama and pull the configured model. Run `npm run dev` to start Express on port 2610 and React on port 2611.
+3. Make focused changes in `backend/` or `frontend/src/`. The active application is JavaScript; `backend/finance/server.py` is the Python finance MCP server. Older root-level Python files remain migration references.
+4. Add tests for new behavior or bug fixes. Run `npm test` and `npm run build` before submitting changes. Tests use mocked models and services.
+5. Update README when setup, configuration, API fields, or behavior changes. Reference `ROADMAP.md` when proposing larger features.
 
-1. **Set up the environment**
-   ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate
-   pip install -r requirements.txt
-   ```
+## Pull Request Checklist
 
-2. **Run the backends locally**
-   - FastAPI API: `uvicorn fastapi_app:app --reload --port 2610`
-   - Flask UI: `export AGENT_API_URL=http://localhost:2610/query && python flask_app.py`
+- Explain the problem and resulting behavior; link the relevant issue or roadmap item.
+- Include test and production-build results.
+- Keep API payload field names compatible with existing clients.
+- Include screenshots for UI changes and timing notes for performance changes.
+- Keep secrets, `.env`, generated databases, `node_modules/`, and `frontend/dist/` out of commits.
 
-3. **Write code + tests**
-   - Add/modify logic in small, reviewable commits.
-   - Keep `python3 -m unittest test` passing.
-   - Update docs/README when you change behaviour.
+Use concise commit subjects and small, reviewable changes. Discuss major architecture changes in an issue or draft PR before implementation. No repository-wide formatter, linter, or numeric coverage threshold is configured.
 
-4. **Profile & observe**
-   - Every `/query` response returns `latency_ms` and `timings` (per-component averages). Include screenshots or notes when submitting performance changes.
+## Python Simulation Development
 
-## Pull request checklist
+Install the trading framework with `.venv/bin/python -m pip install -e .`. Keep its data adapters, policies, execution/accounting and reporting in the separate modules under `trading_agent/`; examples live in `examples/`. Add meaningful tests in `trading_agent/tests/` and run `.venv/bin/python -m unittest discover -s trading_agent/tests -v`. Check a full-session demo and report artifacts when changing metrics or charts. Generated reports under `artifacts/trading/` and editable-install metadata are ignored. Never introduce future-bar access, implicit price filling, mixed-currency valuation or same-bar signal fills.
 
-- [ ] Added/updated unit tests alongside code changes.
-- [ ] Updated `README.md` (and `ROADMAP.md` if scope changes).
-- [ ] Verified lint/format (run `python -m compileall` or your preferred tool).
-- [ ] No generated artifacts (`semantic_memory.db`, `__pycache__/`, etc.) are committed.
-- [ ] Referenced relevant roadmap item or opened a GitHub issue describing the work.
-
-## Roadmap alignment
-
-Major features (memory revamps, deployment changes, etc.) should be discussed upfront. Use GitHub issues referencing `ROADMAP.md` sections, or open a draft PR to share design ideas before doing large refactors.
-
-We welcome iterative improvements—documentation, profiling, UI polish, test coverage, or new tools. Thanks for contributing!
+The trading MCP facade and durable runtime are integrated with chat and `TradingDashboard.jsx`. Run `npm run trading:runtime` separately. Test job lifecycle, cancellation, disconnected clients, progress polling, artifact boundaries and restart interruption when editing this integration. `deploy/install_service.py` can print service definitions without installing them.

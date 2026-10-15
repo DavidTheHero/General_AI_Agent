@@ -1,8 +1,8 @@
 import os
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-import dspy
-
+from agent.llm import build_chain, create_chat_model
 from agent.planners import StockComparisonPlanner, compute_stock_comparison
 from agent.semantic import (
     augment_query_with_context,
@@ -30,19 +30,35 @@ from tools.finance import FinanceToolError
 USAGE_MONITOR = ToolUsageMonitor()
 
 
-class AssistantAgent(dspy.Module):
-    """Simple DSPy agent that can chat generally and call tools when useful."""
+@dataclass
+class AgentPrediction:
+    answer: str
+    responses: List[Dict[str, str]]
+    metadata: Dict[str, Any]
+
+
+class AssistantAgent:
+    """LangChain agent that can chat generally and call tools when useful."""
 
     def __init__(
         self,
         monitor: ToolUsageMonitor | None = None,
         token_tracker: TokenUsageTracker | None = None,
         semantic_store: SemanticMemoryStore | None = None,
+        model=None,
     ):
-        super().__init__()
-        self.router = dspy.ChainOfThought(AssistantRoutingSignature)
-        self.general_answer = dspy.ChainOfThought(GeneralAnswerSignature)
-        self.tool_refiner = dspy.ChainOfThought(ToolRefinementSignature)
+        model = model if model is not None else create_chat_model()
+        self.router = build_chain(
+            model, AssistantRoutingSignature,
+            "User query: {query}\nAvailable tools:\n{available_tools}",
+        )
+        self.general_answer = build_chain(
+            model, GeneralAnswerSignature, "User query: {query}"
+        )
+        self.tool_refiner = build_chain(
+            model, ToolRefinementSignature,
+            "User query: {query}\nTool evidence: {context}",
+        )
         self.monitor = monitor or USAGE_MONITOR
         self.token_tracker = token_tracker or TokenUsageTracker()
         self.memory = AgentMemory()
@@ -54,9 +70,12 @@ class AssistantAgent(dspy.Module):
         self._planners = [StockComparisonPlanner()]
         self._tool_handlers = build_tool_handlers()
         self._available_tools_text = list_available_tools_text()
-        self._followup_intent = dspy.ChainOfThought(FollowupIntentSignature)
+        self._followup_intent = build_chain(
+            model, FollowupIntentSignature,
+            "Previous comparison: {previous_summary}\nUser query: {query}",
+        )
 
-    def forward(self, query: str, metadata: Optional[dict] = None) -> dspy.Prediction:
+    def forward(self, query: str, metadata: Optional[dict] = None) -> AgentPrediction:
         if not query or not query.strip():
             raise ValueError("Query cannot be empty.")
         incoming_metadata = dict(metadata or {})
@@ -95,7 +114,7 @@ class AssistantAgent(dspy.Module):
         timings = self.profiling.summary()
         if timings:
             enriched_metadata["timings"] = timings
-        return dspy.Prediction(
+        return AgentPrediction(
             answer=combined_answer,
             responses=structured,
             metadata=enriched_metadata,
@@ -117,10 +136,10 @@ class AssistantAgent(dspy.Module):
         routed_query = augment_query_with_context(single_query, semantic_context)
 
         with self._profile_step("lm_router"):
-            decision = self.router(
-                query=routed_query,
-                available_tools=self._available_tools_text,
-            )
+            decision = self.router.invoke({
+                "query": routed_query,
+                "available_tools": self._available_tools_text,
+            })
         self.token_tracker.log("router", single_query, decision.reasoning)
         tool_choice = (decision.tool_choice or "none").strip().lower()
         followup_answer = self._maybe_answer_stock_followup(single_query)
@@ -141,7 +160,7 @@ class AssistantAgent(dspy.Module):
         fallback_answer = (decision.direct_answer or "").strip()
         if not fallback_answer:
             with self._profile_step("lm_general_answer"):
-                general_response = self.general_answer(query=single_query).answer
+                general_response = self.general_answer.invoke({"query": single_query}).answer
             self.token_tracker.log("general_answer", single_query, general_response)
             fallback_answer = general_response
         self.monitor.log("direct_response", single_query, "no tool used")
@@ -204,7 +223,7 @@ class AssistantAgent(dspy.Module):
 
         summary = " ".join(summary_parts).strip() or "No prior stock context."
         with self._profile_step("lm_followup_intent"):
-            intent = self._followup_intent(previous_summary=summary, query=query)
+            intent = self._followup_intent.invoke({"previous_summary": summary, "query": query})
         decision = (intent.refers_to_stock_comparison or "").strip().lower()
         if not decision.startswith("y"):
             return None
@@ -272,19 +291,11 @@ class AssistantAgent(dspy.Module):
         )
         return answer_text
 
-def ensure_lm():
-    """Configure DSPy to use a local Ollama model."""
-    if dspy.settings.lm is not None:
-        return
-
-    model_id = os.environ.get("DSPY_MODEL", "ollama/llama3.1:8b-instruct-q4_K_M")
-    ollama_host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
-
-    dspy.settings.configure(lm=dspy.LM(model_id, api_base=ollama_host, cache=False))
+    def __call__(self, query: str, metadata: Optional[dict] = None) -> AgentPrediction:
+        return self.forward(query, metadata)
 
 
 if __name__ == "__main__":
-    ensure_lm()
     agent = AssistantAgent()
     query = os.environ.get(
         "ASSISTANT_QUERY",

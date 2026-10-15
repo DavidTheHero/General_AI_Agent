@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from general_agent import AssistantAgent, ensure_lm
+from general_agent import AssistantAgent
 from memory import default_memory
 from semantic_memory import SemanticMemoryStore
 
@@ -15,8 +15,7 @@ SEMANTIC_STORE = SemanticMemoryStore(
 
 @lru_cache(maxsize=1)
 def get_agent() -> AssistantAgent:
-    """Return a singleton AssistantAgent, configuring the LM once."""
-    ensure_lm()
+    """Return a singleton AssistantAgent, creating the chat model once."""
     return AssistantAgent(semantic_store=SEMANTIC_STORE)
 
 

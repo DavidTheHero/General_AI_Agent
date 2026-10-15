@@ -12,7 +12,9 @@ from unittest.mock import patch
 
 
 # Provide a minimal `requests` module if it's missing so imports succeed.
-if "requests" not in sys.modules:
+try:
+    import requests
+except ImportError:
     dummy_requests = types.ModuleType("requests")
 
     def _missing(*args, **kwargs):  # pylint: disable=unused-argument
@@ -126,6 +128,92 @@ class SemanticStoreTests(unittest.TestCase):
         finally:
             store.close()
 
+
+class LangChainAgentTests(unittest.TestCase):
+    def make_agent(self, responses, store=None):
+        from langchain_core.language_models.fake_chat_models import FakeListChatModel
+        from general_agent import AssistantAgent
+
+        return AssistantAgent(
+            model=FakeListChatModel(responses=responses), semantic_store=store
+        )
+
+    def test_calculator_routing_preserves_response_and_memory(self):
+        store = SemanticMemoryStore(":memory:")
+        self.addCleanup(store.close)
+        agent = self.make_agent([
+            '{"tool_choice":"calculator","calculator_expression":"12+18+20"}',
+            '{"refers_to_stock_comparison":"No"}',
+        ], store)
+        result = agent("Add these numbers", {"session_id": "chain-test", "response_mode": "api"})
+        self.assertIn("50", result.answer)
+        self.assertEqual(agent.usage_summary(), {"calculator": 1})
+        self.assertEqual(result.metadata["session_id"], "chain-test")
+        self.assertIn("lm_router", result.metadata["timings"])
+        self.assertTrue(store.query("chain-test", "numbers"))
+
+    def test_fallback_answer(self):
+        agent = self.make_agent([
+            '{"tool_choice":"none"}',
+            '{"refers_to_stock_comparison":"No"}',
+            '{"answer":"Hello there!"}',
+        ])
+        self.assertIn("Hello there!", agent("Hello").answer)
+
+    def test_stock_followup_uses_existing_comparison(self):
+        memory = AgentMemory()
+        memory.remember_stock_comparison([
+            {"symbol": "AAPL", "start": 100, "end": 110, "change_pct": 10},
+            {"symbol": "MSFT", "start": 100, "end": 105, "change_pct": 5},
+        ], days=7)
+        agent = self.make_agent([
+            '{"tool_choice":"none"}',
+            '{"refers_to_stock_comparison":"Yes"}',
+        ])
+        self.assertIn("AAPL outperformed MSFT", agent("Which did better?", memory.snapshot()).answer)
+
+    def test_invalid_routing_output_is_rejected(self):
+        from langchain_core.exceptions import OutputParserException
+
+        agent = self.make_agent(['{"tool_choice":"unknown_tool"}'])
+        with self.assertRaises(OutputParserException):
+            agent("Hello")
+
+    def test_tool_refinement_uses_langchain(self):
+        agent = self.make_agent(['{"answer":"Evidence-based answer"}'])
+        result = agent.tool_refiner.invoke({"query": "Summarize", "context": "Evidence"})
+        self.assertEqual(result.answer, "Evidence-based answer")
+
+    def test_empty_query_is_rejected_before_model_call(self):
+        agent = self.make_agent([])
+        with self.assertRaisesRegex(ValueError, "cannot be empty"):
+            agent(" ")
+
+    def test_api_query_preserves_response_contract(self):
+        from fastapi.testclient import TestClient
+        from fastapi_app import app
+
+        agent = self.make_agent([
+            '{"tool_choice":"none","direct_answer":"Hello!"}',
+            '{"refers_to_stock_comparison":"No"}',
+        ])
+        with patch("agent_runtime.get_agent", return_value=agent):
+            response = TestClient(app).post("/query", json={"query": "Hello"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(set(response.json()), {
+            "answer", "responses", "usage", "token_usage", "metadata", "latency_ms", "timings",
+        })
+        self.assertIn("Hello!", response.json()["answer"])
+
+    def test_ollama_configuration(self):
+        from agent.llm import create_chat_model
+
+        with patch.dict("os.environ", {
+            "OLLAMA_MODEL": "test-model", "OLLAMA_HOST": "http://localhost:12345",
+        }):
+            model = create_chat_model()
+        self.assertEqual(model.model, "test-model")
+        self.assertEqual(model.base_url, "http://localhost:12345")
 
 if __name__ == "__main__":
     unittest.main()
