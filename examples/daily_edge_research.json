@@ -1,0 +1,16 @@
+{
+    "mode": "daily_research",
+    "daily_research": {
+        "source": "yahoo",
+        "symbols": ["SPY", "IEF", "GLD"],
+        "data_start": "2005-01-03",
+        "development_start": "2006-01-03",
+        "validation_start": "2013-01-02",
+        "development_end": "2022-12-30",
+        "reserved_final_start": "2023-01-03",
+        "reserved_final_end": "2025-12-31",
+        "initial_cash": 100000,
+        "lookbacks": [126, 189, 252],
+        "cost_bps": [5, 10, 20]
+    }
+}

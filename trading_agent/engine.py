@@ -1,7 +1,9 @@
 """Observe -> execute queued targets -> decide -> validate -> queue, one bar at a time."""
 from dataclasses import asdict
+from copy import deepcopy
 import math
 import logging
+from numbers import Real
 
 import pandas as pd
 
@@ -46,25 +48,48 @@ class IntradayAgent:
         self.equity_rows.append({"timestamp": timestamp.isoformat(), "equity": snapshot["equity"], "cash": snapshot["cash"],
             "gross_exposure": sum(item["market_value"] for item in snapshot["positions"].values()),
             "bar_exposure": bar_exposure, "duration_minutes": duration_minutes,
+            "valuation_prices": prices.copy(), "fill_count": len(self.portfolio.fills),
             "benchmark_equity": self.initial_equity * sum(prices[symbol] / self.benchmark_open[symbol] for symbol in self.config.symbols) / len(self.config.symbols)})
         self.last_prices = prices.copy()
         return snapshot
 
     def observe(self, timestamp, bars):
         timestamp = pd.Timestamp(timestamp)
+        if pd.isna(timestamp) or timestamp.tzinfo is None:
+            raise ValueError("Bar timestamp must be timezone-aware")
+        timestamp = timestamp.tz_convert("UTC")
+        if set(bars) != set(self.config.symbols):
+            raise ValueError("Bars must specify every configured symbol and no others")
+        validated = {}
+        for symbol, bar in bars.items():
+            values = {}
+            for field in self.history[symbol].columns:
+                value = bar.get(field)
+                if isinstance(value, bool) or not isinstance(value, Real) or not math.isfinite(value):
+                    raise ValueError(f"{symbol}: {field} must be finite numeric OHLCV")
+                values[field] = float(value)
+            if any(values[field] <= 0 for field in ["Open", "High", "Low", "Close"]) or values["Volume"] < 0:
+                raise ValueError(f"{symbol}: prices must be positive and volume nonnegative")
+            if values["High"] < max(values["Open"], values["Low"], values["Close"]) or values["Low"] > min(values["Open"], values["High"], values["Close"]):
+                raise ValueError(f"{symbol}: inconsistent OHLCV range")
+            validated[symbol] = values
+        bars = validated
+        if self.last_timestamp is not None and timestamp <= self.last_timestamp:
+            if all(timestamp in self.history[symbol].index and self.history[symbol].loc[timestamp].to_dict() == bar for symbol, bar in bars.items()):
+                return False
+            raise ValueError("Conflicting duplicate or revised previously processed bar")
         if self.finished or self.failed:
             raise ValueError("Session already finished or failed")
-        if self.last_timestamp is not None and timestamp <= self.last_timestamp:
-            return False  # Repeated polling cannot replay an already-consumed bar.
         grid = self.session.grid(self.config.minutes)
         expected = grid[0] if self.last_timestamp is None else grid[grid.get_loc(self.last_timestamp) + 1]
-        if timestamp != expected or set(bars) != set(self.config.symbols):
+        if timestamp != expected:
             raise ValueError("Bars must arrive in complete chronological session order")
         opening = {symbol: float(bar["Open"]) for symbol, bar in bars.items()}
         closing = {symbol: float(bar["Close"]) for symbol, bar in bars.items()}
         if self.last_timestamp is None:
             self.equity_rows.append({"timestamp": self.session.open.isoformat(), "equity": self.initial_equity,
-                                     "cash": self.initial_equity, "gross_exposure": 0, "benchmark_equity": self.initial_equity, "bar_exposure": 0, "duration_minutes": 0})
+                                     "cash": self.initial_equity, "gross_exposure": 0, "benchmark_equity": self.initial_equity, "bar_exposure": 0, "duration_minutes": 0,
+                                     "valuation_prices": opening.copy(), "fill_count": 0})
             self.benchmark_open = opening.copy()
         if self.pending is not None:
             weights, reason = self.pending
@@ -100,6 +125,8 @@ class IntradayAgent:
         else:
             snapshot = self._mark(end, closing, bar_exposure, (end - timestamp).total_seconds() / 60)
             error, requested = None, None
+            if hasattr(self.policy, "last_audit"):
+                self.policy.last_audit = None
             try:
                 if self.halt_reason:
                     decision = Decision(weights={symbol: 0 for symbol in self.config.symbols}, reason=f"Trading halted: {self.halt_reason}")
@@ -119,7 +146,8 @@ class IntradayAgent:
                     self.halt_reason = "decision_error_limit"
                     self.events.append({"timestamp": end.isoformat(), "type": self.halt_reason})
                     self.pending = ({symbol: 0 for symbol in self.config.symbols}, "Decision error limit: liquidate at next bar open")
-            self.decisions.append({"timestamp": end.isoformat(), "requested_weights": requested, "accepted_weights": weights, "reason": reason, "error": error})
+            self.decisions.append({"timestamp": end.isoformat(), "requested_weights": requested, "accepted_weights": weights, "reason": reason, "error": error,
+                                   **({"policy_audit": deepcopy(self.policy.last_audit)} if getattr(self.policy, "last_audit", None) else {})})
         logger.info("%s | equity USD %.2f | fills %d%s", end.isoformat(), snapshot["equity"], len(self.portfolio.fills), f" | halt {self.halt_reason}" if self.halt_reason else "")
         self.last_prices, self.last_timestamp = closing, timestamp
         return True
@@ -132,6 +160,7 @@ class IntradayAgent:
             status = "execution_error"
         return {"session": self.session.date, "session_open": self.session.open.isoformat(), "session_close": self.session.close.isoformat(),
                 "valuation_timestamp": self.equity_rows[-1]["timestamp"] if self.equity_rows else None,
+                "strategy_id": self.config.strategy.kind, "strategy_version": self.config.strategy.version,
                 "policy_name": getattr(self.policy, "name", type(self.policy).__name__), "status": status, "finished": self.finished, "halt_reason": self.halt_reason, "initial_equity": self.initial_equity,
                 "final_equity": self.portfolio.equity(self.last_prices) if self.last_prices else self.initial_equity,
                 "holdings": self.portfolio.snapshot(self.last_prices)["positions"] if self.last_prices else {},

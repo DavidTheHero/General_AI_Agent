@@ -2,13 +2,16 @@
 from datetime import datetime, timezone
 from pathlib import Path
 import json
+import os
 import time
 from itertools import count
+from uuid import uuid4
 
 import pandas as pd
 
 from .calendar import MarketCalendar
 from .data import DataError, YahooFinanceFeed, session_frames
+from .datasets import canonical, checksum, frame_record
 from .engine import IntradayAgent
 from .reporting import atomic_text, write_report
 
@@ -21,8 +24,38 @@ def _provenance(data):
     return {"retrieved_at": data.retrieved_at, "source": data.source, "instruments": data.metadata}
 
 
+def _archived_yahoo_feed(output):
+    """Archive each adapter response before validation, including failed polls."""
+    directory = Path(output) / "source-responses"
+
+    def capture(symbol, request, frame, metadata, error):
+        directory.mkdir(parents=True, exist_ok=True)
+        retrieved_at = _utcnow().isoformat()
+        response = {"symbol": symbol, "request": request, "retrieved_at": retrieved_at, "metadata": metadata,
+                    "frame": frame_record(frame) if frame is not None else None, "error": error,
+                    "capture_level": "adapter DataFrame before normalization; original Yahoo HTTP bytes unavailable"}
+        path = directory / f"{uuid4().hex}.json"
+        with path.open("x", encoding="utf-8") as stream:
+            stream.write(canonical(response))
+            stream.flush()
+            os.fsync(stream.fileno())
+        path.chmod(0o444)
+        with (directory / "index.jsonl").open("a", encoding="utf-8") as stream:
+            stream.write(canonical({"file": path.name, "sha256": checksum(path), "retrieved_at": retrieved_at, "symbol": symbol}) + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+
+    return YahooFinanceFeed(response_sink=capture)
+
+
+def _archive_provenance():
+    return {"raw_capture_ref": "source-responses/index.jsonl", "capture_level": "adapter DataFrame before normalization; original Yahoo HTTP bytes unavailable",
+            "archive_status": "Raw response archive only; not a validated immutable research dataset"}
+
+
 def _daily_report(output, config, result, mode, source, provenance, errors):
     day_config = config.model_copy(update={"initial_cash": result["initial_equity"]})
+    provenance = [{**item, "raw_capture_ref": f"../{item['raw_capture_ref']}"} if "raw_capture_ref" in item else item for item in provenance]
     return write_report(Path(output) / result["session"], day_config, [result], mode=mode, source=source,
                         provenance=provenance, errors=errors)
 
@@ -42,14 +75,15 @@ def _progress(output, agent, source, *, state="observing"):
 
 def run_backtest(config, start, end, output, *, feed=None, calendar=None, policy_factory=None, now=None):
     calendar = calendar or MarketCalendar()
-    feed = feed or YahooFinanceFeed()
+    archive_source = feed is None
+    feed = feed if feed is not None else _archived_yahoo_feed(output)
     sessions = calendar.sessions(start, end)
     if not sessions:
         raise ValueError("No NYSE sessions in this date range")
     clock = pd.Timestamp(now or _utcnow()).tz_convert("UTC")
     if sessions[-1].close > clock:
         raise ValueError("Historical replay requires completed sessions; use watch for an ongoing session")
-    results, provenance, errors = [], [], []
+    results, provenance, errors = [], [_archive_provenance()] if archive_source else [], []
     source = "Yahoo Finance via yfinance (request not completed)"
     cash = config.initial_cash
     try:
@@ -91,8 +125,9 @@ def run_backtest(config, start, end, output, *, feed=None, calendar=None, policy
 def run_watch(config, output, *, session_count=1, feed=None, calendar=None, policy_factory=None, clock=_utcnow, sleep=time.sleep):
     if session_count is not None and session_count < 1:
         raise ValueError("session_count must be positive")
-    calendar, feed = calendar or MarketCalendar(), feed or YahooFinanceFeed()
-    results, provenance, errors = [], [], []
+    archive_source = feed is None
+    calendar, feed = calendar or MarketCalendar(), feed if feed is not None else _archived_yahoo_feed(output)
+    results, provenance, errors = [], [_archive_provenance()] if archive_source else [], []
     source = "Yahoo Finance via yfinance (awaiting source data)"
     cash = config.initial_cash
     interrupted = False
@@ -118,8 +153,7 @@ def run_watch(config, output, *, session_count=1, feed=None, calendar=None, poli
                     source = data.source; provenance.append(_provenance(data))
                     frames = session_frames(data, session, config, complete_until=complete_until)
                     for timestamp in next(iter(frames.values())).index:
-                        if agent.last_timestamp is None or timestamp > agent.last_timestamp:
-                            agent.observe(timestamp, {symbol: frame.loc[timestamp].to_dict() for symbol, frame in frames.items()})
+                        if agent.observe(timestamp, {symbol: frame.loc[timestamp].to_dict() for symbol, frame in frames.items()}):
                             _progress(output, agent, source)
                     failures = 0
                 except DataError as error:

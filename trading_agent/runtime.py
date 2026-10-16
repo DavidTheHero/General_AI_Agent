@@ -15,6 +15,7 @@ import subprocess
 import sys
 import threading
 from uuid import uuid4
+from urllib.parse import parse_qs, urlsplit
 
 from pydantic import Field, model_validator
 from typing import Literal
@@ -25,7 +26,7 @@ from .reporting import atomic_text
 
 
 ROOT = Path(__file__).resolve().parents[1]
-ARTIFACTS = {"report.html", "report.md", "report.json", "performance.png", "executions.png", "daily_pnl.png", "equity.csv", "fills.csv", "decisions.json"}
+ARTIFACTS = {"report.html", "report.md", "report.json", "summary.json", "experiment.json", "attempts.jsonl", "daily-study.json", "data-manifest.json", "performance.png", "executions.png", "daily_pnl.png", "equity.csv", "fills.csv", "decisions.json"}
 
 
 def runtime_root():
@@ -94,6 +95,21 @@ class JobManager:
         self.db = sqlite3.connect(self.root / "jobs.sqlite", check_same_thread=False)
         self.db.row_factory = sqlite3.Row
         self.db.execute("CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, request TEXT, status TEXT, created_at TEXT, updated_at TEXT, error TEXT)")
+        abandoned = self.db.execute("SELECT id, request FROM jobs WHERE status IN ('running','stopping')").fetchall()
+        research_ids = [row["id"] for row in abandoned if json.loads(row["request"])["mode"] == "experiment"]
+        if research_ids:
+            from .research import reconcile_interrupted
+            reconciled = reconcile_interrupted(self.root / "research", research_ids)
+            for job_id in research_ids:
+                output = self.root / job_id / "output"
+                output.mkdir(parents=True, exist_ok=True)
+                if job_id in reconciled:
+                    record = reconciled[job_id]
+                    atomic_text(output / "experiment.json", json.dumps(record, allow_nan=False))
+                    atomic_text(output / "summary.json", json.dumps({key: value for key, value in record.items() if key not in {"environment", "attempts", "protocol"}}, allow_nan=False))
+                attempts = self.root / "research/experiments" / job_id / "attempts.jsonl"
+                if attempts.is_file():
+                    atomic_text(output / "attempts.jsonl", attempts.read_text())
         self.db.execute("UPDATE jobs SET status='interrupted', updated_at=?, error=? WHERE status IN ('running','stopping')",
                         (_now(), "Runtime restarted. Review the last saved positions and reports before starting a new simulation; intraday state is not resumed."))
         self.db.commit()
@@ -106,7 +122,12 @@ class JobManager:
         self.db.commit()
 
     def start(self, value):
-        request = JobRequest.model_validate(value)
+        research = isinstance(value, dict) and value.get("mode") in {"dataset", "experiment", "daily_research", "sector_research", "weekly_research"}
+        if research:
+            from .research import ResearchJobRequest
+            request = ResearchJobRequest.model_validate(value)
+        else:
+            request = JobRequest.model_validate(value)
         if request.mode == "backtest" and request.start:
             validate_yahoo_window(request.start, request.end or request.start, request.config.interval)
         with self.lock:
@@ -117,14 +138,21 @@ class JobManager:
             job_id = uuid4().hex
             directory = self.root / job_id
             directory.mkdir()
-            atomic_text(directory / "config.json", request.config.model_dump_json())
-            command = [sys.executable, "-m", "trading_agent", request.mode, "--runtime-worker", "--config", str(directory / "config.json"), "--output", str(directory / "output")]
-            if request.start:
-                command += ["--start", request.start]
-            if request.end:
-                command += ["--end", request.end]
-            if request.mode == "watch":
-                command += ["--continuous"] if request.continuous else ["--sessions", str(request.sessions)]
+            atomic_text(directory / "request.json", request.model_dump_json())
+            if research:
+                module = f"trading_agent.{request.mode}" if request.mode in {"daily_research", "sector_research", "weekly_research"} else "trading_agent.research"
+                command = [sys.executable, "-m", module, "--request", str(directory / "request.json"),
+                           "--root", str(self.root / "research"), "--output", str(directory / "output"),
+                           "--experiment-id", job_id, "--runtime-worker"]
+            else:
+                atomic_text(directory / "config.json", request.config.model_dump_json())
+                command = [sys.executable, "-m", "trading_agent", request.mode, "--runtime-worker", "--config", str(directory / "config.json"), "--output", str(directory / "output")]
+                if request.start:
+                    command += ["--start", request.start]
+                if request.end:
+                    command += ["--end", request.end]
+                if request.mode == "watch":
+                    command += ["--continuous"] if request.continuous else ["--sessions", str(request.sessions)]
             now = _now()
             self.db.execute("INSERT INTO jobs VALUES (?,?,?,?,?,?)", (job_id, request.model_dump_json(), "running", now, now, None))
             self.db.commit()
@@ -147,8 +175,11 @@ class JobManager:
             row = self.db.execute("SELECT status FROM jobs WHERE id=?", (job_id,)).fetchone()
             record = _read(self.root / job_id / "output/summary.json")
             stopped = row["status"] == "stopping"
-            status = "stopped" if stopped else "complete" if code == 0 and record and record["status"] == "complete" else "failed"
+            complete = code == 0 and record and record.get("status") == "complete"
+            status = "complete" if complete else "stopped" if stopped else "failed"
             error = None if status != "failed" else "; ".join(record.get("errors", [])) if record else f"Worker exited with code {code}; inspect its local worker.log"
+            if status == "stopped" and not record:
+                error = "Cancelled before a final report was saved. Review the last atomic progress snapshot; missing results are unavailable and no work is resumed."
             self._update(job_id, status, error or (f"Worker exited with code {code}; simulation did not complete, inspect the report" if status == "failed" else None))
             self.processes.pop(job_id, None)
 
@@ -164,7 +195,7 @@ class JobManager:
         output = self.root / job_id / "output"
         progress, report = _read(output / "progress.json"), _read(output / "summary.json")
         result["progress"] = progress
-        result["report"] = {key: report[key] for key in ["status", "generated_at", "source", "metrics", "errors"]} if report else None
+        result["report"] = {key: report[key] for key in ["status", "generated_at", "source", "metrics", "errors", "dataset_id", "experiment_id", "assessment", "promotion_status", "finalized", "protocol_id", "provenance_ref"] if key in report} if report else None
         result["artifacts"] = sorted(name for name in ARTIFACTS if (output / name).is_file())
         result["dashboard_url"] = f"/?trading_job={job_id}"
         result["simulation_only"] = True
@@ -177,6 +208,68 @@ class JobManager:
             row["request"] = json.loads(row["request"])
             row["dashboard_url"] = f"/?trading_job={row['id']}"
         return {"jobs": rows}
+
+    def datasets(self, limit=20):
+        from .datasets import DatasetStore
+        return {"datasets": DatasetStore(self.root / "research/datasets").list(limit=limit)}
+
+    def dataset(self, dataset_id):
+        from .datasets import DatasetStore
+        return DatasetStore(self.root / "research/datasets").inspect(dataset_id)
+
+    def experiments(self, limit=20):
+        from .research import list_experiments
+        records = list_experiments(self.root / "research", limit=limit)
+        jobs = [job for job in self.list()["jobs"] if job["request"]["mode"] == "experiment"][:limit]
+        return {"experiments": records, "jobs": jobs}
+
+    def experiment(self, job_id):
+        from .research import inspect_experiment
+        job = self.get(job_id)
+        if job["request"]["mode"] != "experiment":
+            raise KeyError("Unknown research experiment")
+        try:
+            job["experiment"] = inspect_experiment(self.root / "research", job_id)
+        except (FileNotFoundError, KeyError):
+            job["experiment"] = None
+        return job
+
+    def daily_research(self, job_id):
+        return self._daily_study(job_id, "daily_research")
+
+    def sector_research(self, job_id):
+        return self._daily_study(job_id, "sector_research")
+
+    def weekly_research(self, job_id):
+        return self._daily_study(job_id, "weekly_research")
+
+    def _daily_study(self, job_id, mode):
+        job = self.get(job_id)
+        if job["request"]["mode"] != mode:
+            raise KeyError(f"Unknown {mode} job")
+        job["daily_research"] = _read(self.root / job_id / "output/daily-study.json")
+        if job["status"] in {"interrupted", "stopped", "failed"}:
+            for snapshot in [job["daily_research"], job["report"]]:
+                if snapshot and snapshot.get("status") in {"running", "stopping"}:
+                    snapshot["last_saved_status"] = snapshot["status"]
+                    snapshot["status"] = job["status"]
+                    snapshot["operational_notice"] = "The worker is no longer active. This is the last saved snapshot; later observations are unknown and no work is replayed."
+        return job
+
+    def compare(self, experiment_ids):
+        from .research import compare_experiments
+        if not isinstance(experiment_ids, list) or not 2 <= len(experiment_ids) <= 6 or len(set(experiment_ids)) != len(experiment_ids):
+            raise ValueError("Compare between two and six distinct experiment IDs")
+        for job_id in experiment_ids:
+            self.experiment(job_id)
+        return compare_experiments(self.root / "research", experiment_ids)
+
+    def attempt(self, experiment_id, attempt_id):
+        from .research import inspect_attempt
+        self.experiment(experiment_id)
+        if not re.fullmatch(re.escape(experiment_id) + r"-\d{4}", attempt_id):
+            raise ValueError("Use an exact attempt ID belonging to this experiment")
+        return inspect_attempt(self.root / "research", experiment_id, attempt_id)
 
     def stop(self, job_id):
         with self.lock:
@@ -225,7 +318,12 @@ def create_server(manager, *, port=2612, token=None):
                 if not hmac.compare_digest(self.headers.get("Authorization", ""), f"Bearer {token}"):
                     self.send_error(401)
                     return
-                parts = self.path.strip("/").split("/")
+                location = urlsplit(self.path)
+                parts = location.path.strip("/").split("/")
+                query = parse_qs(location.query)
+                limit = int(query.get("limit", ["20"])[0])
+                if not 1 <= limit <= 50:
+                    raise ValueError("limit must be between 1 and 50")
                 if self.command == "POST":
                     length = int(self.headers.get("Content-Length", "0"))
                     if not 0 <= length <= 65536:
@@ -233,12 +331,58 @@ def create_server(manager, *, port=2612, token=None):
                     body = json.loads(self.rfile.read(length) or b"{}")
                     if parts == ["jobs"]:
                         result = manager.start(body)
+                    elif parts == ["datasets"]:
+                        result = manager.start({"mode": "dataset", "dataset": body})
+                    elif parts == ["experiments"]:
+                        result = manager.start({"mode": "experiment", "experiment": body})
+                    elif parts == ["daily-research"]:
+                        result = manager.start({"mode": "daily_research", "daily_research": body})
+                    elif parts == ["sector-research"]:
+                        result = manager.start({"mode": "sector_research", "sector_research": body})
+                    elif parts == ["weekly-research"]:
+                        result = manager.start({"mode": "weekly_research", "weekly_research": body})
+                    elif parts == ["experiments", "compare"]:
+                        if not isinstance(body, dict) or set(body) != {"experiment_ids"}:
+                            raise ValueError("Provide experiment_ids only")
+                        result = manager.compare(body["experiment_ids"])
+                    elif parts == ["strategies", "validate"]:
+                        from .registry import validate_strategy
+                        result = validate_strategy(body)
                     elif len(parts) == 3 and parts[0] == "jobs" and parts[2] == "stop":
                         result = manager.stop(parts[1])
+                    elif len(parts) == 3 and parts[0] == "experiments" and parts[2] == "stop":
+                        manager.experiment(parts[1])
+                        manager.stop(parts[1])
+                        result = manager.experiment(parts[1])
                     else:
                         raise KeyError("Unknown endpoint")
                 elif parts == ["jobs"]:
                     result = manager.list()
+                elif parts == ["strategies"]:
+                    from .registry import list_strategies
+                    result = {"strategies": list_strategies()}
+                elif parts == ["datasets"]:
+                    result = manager.datasets(limit)
+                elif len(parts) == 2 and parts[0] == "datasets":
+                    result = manager.dataset(parts[1])
+                elif parts == ["experiments"]:
+                    result = manager.experiments(limit)
+                elif len(parts) == 2 and parts[0] == "experiments":
+                    result = manager.experiment(parts[1])
+                elif parts == ["daily-research"]:
+                    result = {"jobs": [job for job in manager.list()["jobs"] if job["request"]["mode"] == "daily_research"][:limit]}
+                elif len(parts) == 2 and parts[0] == "daily-research":
+                    result = manager.daily_research(parts[1])
+                elif parts == ["sector-research"]:
+                    result = {"jobs": [job for job in manager.list()["jobs"] if job["request"]["mode"] == "sector_research"][:limit]}
+                elif len(parts) == 2 and parts[0] == "sector-research":
+                    result = manager.sector_research(parts[1])
+                elif parts == ["weekly-research"]:
+                    result = {"jobs": [job for job in manager.list()["jobs"] if job["request"]["mode"] == "weekly_research"][:limit]}
+                elif len(parts) == 2 and parts[0] == "weekly-research":
+                    result = manager.weekly_research(parts[1])
+                elif len(parts) == 4 and parts[0] == "experiments" and parts[2] == "attempts":
+                    result = manager.attempt(parts[1], parts[3])
                 elif len(parts) == 2 and parts[0] == "jobs":
                     result = manager.get(parts[1])
                 elif len(parts) == 4 and parts[0] == "jobs" and parts[2] == "artifacts":
@@ -252,7 +396,7 @@ def create_server(manager, *, port=2612, token=None):
                 else:
                     raise KeyError("Unknown endpoint")
                 self.respond(200, result)
-            except KeyError as error:
+            except (KeyError, FileNotFoundError) as error:
                 self.respond(404, {"error": str(error)})
             except (ValueError, TypeError, DataError) as error:
                 self.respond(400, {"error": str(error)})

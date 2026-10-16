@@ -18,6 +18,14 @@ class DataError(RuntimeError):
     pass
 
 
+def snapshot_history_metadata(details):
+    """Capture available fields without evaluating yfinance's lazy intraday field."""
+    return {"fields": {key: details[key] for key in details if key != "tradingPeriods"},
+            "original_repr": str(details),
+            "omissions": ["tradingPeriods is a lazy provider field; deliberately not evaluated"],
+            "as_of_note": "Provider metadata can describe retrieval-time conditions, not the requested historical period; never used as policy features"}
+
+
 def validate_yahoo_window(start, end, interval, *, now=None):
     """Reject known unsupported windows; dates are inclusive and exchange-local."""
     first, last = pd.Timestamp(start).date(), pd.Timestamp(end).date()
@@ -72,9 +80,10 @@ def clean_bars(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 class YahooFinanceFeed:
-    def __init__(self, ticker_factory=yf.Ticker, *, clock=None):
+    def __init__(self, ticker_factory=yf.Ticker, *, clock=None, response_sink=None):
         self.ticker_factory = ticker_factory
         self.clock = clock or (lambda: datetime.now(timezone.utc))
+        self.response_sink = response_sink
 
     def fetch(self, symbols, start, end, interval):
         validate_yahoo_window(start, end, interval, now=self.clock())
@@ -95,14 +104,24 @@ class YahooFinanceFeed:
                     logger.info("%s: fetching batch %d/%d, %s to %s (exclusive), %s", symbol, number, len(windows), batch_start, batch_end, interval)
                     try:
                         frame = ticker.history(start=batch_start, end=batch_end, interval=interval, auto_adjust=False,
-                                               actions=True, prepost=False, timeout=10, raise_errors=True)
+                                               actions=True, prepost=False, repair=False, keepna=True, timeout=10, raise_errors=True)
                     except Exception as error:
+                        if self.response_sink:
+                            self.response_sink(symbol, {"start": batch_start, "end_exclusive": batch_end, "interval": interval}, None, {}, str(error))
                         raise DataError(f"Yahoo Finance failed for {symbol}, batch {batch_start} to {batch_end} (exclusive): {error}") from error
+                    try:
+                        details = (ticker.get_history_metadata() or {}) if not frame.empty else {}
+                    except Exception as error:
+                        if self.response_sink:
+                            self.response_sink(symbol, {"start": batch_start, "end_exclusive": batch_end, "interval": interval}, frame, {}, str(error))
+                        raise DataError(f"{symbol}: provider metadata unavailable: {error}") from error
+                    if self.response_sink:
+                        self.response_sink(symbol, {"start": batch_start, "end_exclusive": batch_end, "interval": interval,
+                                                   "auto_adjust": False, "actions": True, "prepost": False, "repair": False, "keepna": True}, frame, snapshot_history_metadata(details), None)
                     request = {"start": batch_start, "end_exclusive": batch_end, "rows": 0}
                     requests.append(request)
                     if frame.empty:
                         continue  # A final batch can contain only market-closure dates.
-                    details = ticker.get_history_metadata() or {}
                     currency = details.get("currency")
                     if currency != "USD":
                         raise DataError(f"{symbol}: expected USD prices, received {currency or 'unknown currency'}; FX simulation is not configured")

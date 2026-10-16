@@ -36,6 +36,35 @@ export function createApp({ agent, store, workspace, trading, frontendPath = fil
         app.post("/trading/jobs", async (request, response) => response.status(202).json(await trading.call("trading_start", tradingInputs.trading_start.parse(request.body))));
         app.get("/trading/jobs/:id", async (request, response) => response.set("Cache-Control", "no-store").json(await trading.call("trading_status", { job_id: jobId.parse(request.params.id) })));
         app.post("/trading/jobs/:id/stop", async (request, response) => response.json(await trading.call("trading_stop", { job_id: jobId.parse(request.params.id) })));
+        app.get("/trading/strategies", async (_request, response) => response.json(await trading.call("trading_strategies")));
+        app.post("/trading/strategies/validate", async (request, response) => response.json(await trading.call("trading_validate_strategy", tradingInputs.trading_validate_strategy.parse({ strategy: request.body }))));
+        app.get("/trading/datasets", async (request, response) => response.set("Cache-Control", "no-store").json(await trading.call("trading_datasets", tradingInputs.trading_datasets.parse({ limit: request.query.limit === undefined ? 20 : Number(request.query.limit) }))));
+        app.post("/trading/datasets", async (request, response) => response.status(202).json(await trading.call("trading_dataset_create", tradingInputs.trading_dataset_create.parse({ dataset: request.body }))));
+        app.get("/trading/datasets/:id", async (request, response) => response.json(await trading.call("trading_dataset_inspect", tradingInputs.trading_dataset_inspect.parse({ dataset_id: request.params.id }))));
+        app.get("/trading/experiments", async (request, response) => response.set("Cache-Control", "no-store").json(await trading.call("trading_experiment_list", tradingInputs.trading_experiment_list.parse({ limit: request.query.limit === undefined ? 20 : Number(request.query.limit) }))));
+        app.post("/trading/experiments", async (request, response) => response.status(202).json(await trading.call("trading_experiment_start", tradingInputs.trading_experiment_start.parse({ experiment: request.body }))));
+        app.post("/trading/experiments/compare", async (request, response) => response.json(await trading.call("trading_experiment_compare", tradingInputs.trading_experiment_compare.parse(request.body))));
+        app.get("/trading/experiments/:id", async (request, response) => response.set("Cache-Control", "no-store").json(await trading.call("trading_experiment_status", { job_id: jobId.parse(request.params.id) })));
+        app.get("/trading/experiments/:id/attempts/:attemptId", async (request, response) => response.json(await trading.call("trading_experiment_attempt", tradingInputs.trading_experiment_attempt.parse({ experiment_id: request.params.id, attempt_id: request.params.attemptId }))));
+        app.post("/trading/experiments/:id/stop", async (request, response) => response.json(await trading.call("trading_experiment_cancel", { job_id: jobId.parse(request.params.id) })));
+        app.get("/trading/daily-research", async (_request, response) => {
+            const result = await trading.call("trading_list");
+            response.set("Cache-Control", "no-store").json({ jobs: result.jobs.filter((job) => job.request?.mode === "daily_research") });
+        });
+        app.post("/trading/daily-research", async (request, response) => response.status(202).json(await trading.call("trading_daily_research_start", tradingInputs.trading_daily_research_start.parse({ research: request.body }))));
+        app.get("/trading/daily-research/:id", async (request, response) => response.set("Cache-Control", "no-store").json(await trading.call("trading_daily_research_status", { job_id: jobId.parse(request.params.id) })));
+        app.get("/trading/sector-research", async (_request, response) => {
+            const result = await trading.call("trading_list");
+            response.set("Cache-Control", "no-store").json({ jobs: result.jobs.filter((job) => job.request?.mode === "sector_research") });
+        });
+        app.post("/trading/sector-research", async (request, response) => response.status(202).json(await trading.call("trading_sector_research_start", tradingInputs.trading_sector_research_start.parse({ research: request.body }))));
+        app.get("/trading/sector-research/:id", async (request, response) => response.set("Cache-Control", "no-store").json(await trading.call("trading_sector_research_status", { job_id: jobId.parse(request.params.id) })));
+        app.get("/trading/weekly-research", async (_request, response) => {
+            const result = await trading.call("trading_list");
+            response.set("Cache-Control", "no-store").json({ jobs: result.jobs.filter((job) => job.request?.mode === "weekly_research") });
+        });
+        app.post("/trading/weekly-research", async (request, response) => response.status(202).json(await trading.call("trading_weekly_research_start", tradingInputs.trading_weekly_research_start.parse({ research: request.body }))));
+        app.get("/trading/weekly-research/:id", async (request, response) => response.set("Cache-Control", "no-store").json(await trading.call("trading_weekly_research_status", { job_id: jobId.parse(request.params.id) })));
         app.get("/trading/jobs/:id/artifacts/:name", async (request, response) => {
             const content = await trading.artifact(jobId.parse(request.params.id), request.params.name);
             response.set("Cache-Control", "no-store").set("X-Content-Type-Options", "nosniff");

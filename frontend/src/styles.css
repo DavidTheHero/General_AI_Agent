@@ -55,6 +55,26 @@
 .trading-decisions small { color: var(--muted); }
 .trading-artifacts { padding-bottom: 24px; }
 .trading-artifacts a { display: inline-block; margin: 0 16px 12px 0; color: var(--accent); font-size: 13px; }
+.research-dashboard { margin-top: 24px; }
+.research-dashboard h4 { margin: 12px 0; }
+.research-forms { display: grid; grid-template-columns: minmax(230px, 1fr) minmax(0, 2fr); gap: 24px; margin: 24px 0; align-items: start; }
+.research-forms form { display: grid; gap: 13px; padding: 20px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); }
+.research-forms label { display: grid; gap: 7px; color: var(--muted); font-size: 12px; }
+.research-forms input, .research-forms select, .research-forms textarea { width: 100%; min-width: 0; padding: 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); }
+.research-forms textarea, .research-dashboard pre { font-family: ui-monospace, monospace; font-size: 12px; }
+.research-dashboard pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 420px; overflow: auto; line-height: 1.6; }
+.research-dashboard small, .research-registry dt { color: var(--muted); line-height: 1.5; }
+.research-dashboard details, .research-periods { margin: 16px 0; padding: 14px; border: 1px solid var(--border); border-radius: 8px; }
+.research-dashboard summary { cursor: pointer; }
+.research-registry article { padding: 12px 0; border-top: 1px solid var(--border); }
+.research-registry dd { margin: 4px 0 12px; font-size: 13px; }
+.research-input-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.research-experiment-list { display: grid; gap: 10px; margin-bottom: 14px; }
+.research-experiment-list > div { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; }
+.research-experiment-list button { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 10px; overflow-wrap: anywhere; }
+.research-experiment-list button[aria-pressed="true"] { border-color: var(--accent); }
+.research-experiment-list label { color: var(--muted); font-size: 12px; }
+@media (max-width: 800px) { .research-forms { grid-template-columns: 1fr; } .research-input-row { grid-template-columns: 1fr; } }
 @media (max-width: 1000px) { .trading-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 700px) { .trading-dashboard { padding: 20px 16px; } .trading-layout { grid-template-columns: 1fr; } .trading-metrics strong { font-size: 17px; } }
 * {

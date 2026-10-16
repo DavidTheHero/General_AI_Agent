@@ -35,7 +35,7 @@ def frame(session=None, opens=None, closes=None):
     opens = opens or [100, 110, 130, 140]
     closes = closes or [100, 120, 135, 130]
     return pd.DataFrame({"Open": opens, "High": [max(a, b) + 1 for a, b in zip(opens, closes)],
-                         "Low": [min(a, b) - 1 for a, b in zip(opens, closes)], "Close": closes, "Volume": 1000}, index=session.grid(5))
+                         "Low": [max(0.01, min(a, b) - 1) for a, b in zip(opens, closes)], "Close": closes, "Volume": 1000}, index=session.grid(5))
 
 
 def market(frame_value=None):

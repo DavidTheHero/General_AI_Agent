@@ -119,7 +119,7 @@ export function createAgent({ chains = createChains(), tools = createTools(), st
                 const candidates = new Map();
                 function plannerTools(observations) {
                     let names = [...available];
-                    if (observations.some((item) => item.status === "ok" && ["trading_start", "trading_stop"].includes(item.tool))) return [];
+                    if (observations.some((item) => item.status === "ok" && ["trading_start", "trading_stop", "trading_dataset_create", "trading_experiment_start", "trading_experiment_cancel", "trading_daily_research_start", "trading_sector_research_start", "trading_weekly_research_start"].includes(item.tool))) return [];
                     if (companyBrief) {
                         const lastSuccess = [...observations].reverse().find((item) => item.status === "ok");
                         if (lastSuccess?.tool === "finance_workspace") names = [];

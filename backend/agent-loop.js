@@ -17,9 +17,20 @@ export function loopObservation(result, tool = "", args = {}) {
     if (tool.startsWith("trading_") && result?.id) return {
         id: result.id, status: result.status, simulation_only: true, dashboard_url: result.dashboard_url,
         error: result.error, report: result.report,
+        daily_research: result.daily_research ? { experiment_id: result.daily_research.experiment_id,
+            assessment: result.daily_research.assessment, promotion_status: result.daily_research.promotion_status,
+            metrics: result.daily_research.metrics, reserved_final: result.daily_research.reserved_final,
+            promotion_blockers: result.daily_research.promotion_blockers, provenance_ref: result.daily_research.provenance_ref } : null,
+        experiment: result.experiment ? { experiment_id: result.experiment.experiment_id, dataset_id: result.experiment.dataset_id,
+            protocol_id: result.experiment.protocol_id, status: result.experiment.status, assessment: result.experiment.assessment,
+            assessment_reason: result.experiment.assessment_reason, metrics: result.experiment.metrics,
+            final_test_accessed: result.experiment.split?.final_test_accessed, attempts: result.experiment.attempts?.length,
+            provenance_ref: result.experiment.provenance_ref, errors: result.experiment.errors } : null,
         progress: result.progress ? { state: result.progress.state, source: result.progress.source, session: result.progress.session,
             valuation_timestamp: result.progress.valuation_timestamp, completed_bars: result.progress.completed_bars,
-            latest_equity: result.progress.equity?.at(-1), holdings: result.progress.holdings, latest_decision: result.progress.decisions?.at(-1) } : null,
+            attempt_id: result.progress.attempt_id, attempts_completed: result.progress.attempts_completed,
+            latest_equity: result.progress.equity?.at(-1), holdings: result.progress.holdings,
+            latest_decision: result.progress.decisions?.length ? Object.fromEntries(Object.entries(result.progress.decisions.at(-1)).filter(([key]) => key !== "policy_audit")) : null } : null,
     };
     if (tool === "resolve_company") return { status: result.status, request: result.request, company: result.company,
         candidates: result.candidates, unverified_candidates: result.unverified_candidates?.slice(0, 3), errors: result.errors, limitation: result.limitation };

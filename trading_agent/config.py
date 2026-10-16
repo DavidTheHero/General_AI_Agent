@@ -11,19 +11,25 @@ class Settings(BaseModel):
 
 
 class StrategyConfig(Settings):
-    kind: Literal["sma", "momentum", "buy_and_hold", "ollama"] = "sma"
+    kind: Literal["sma", "momentum", "buy_and_hold", "ollama", "trend_following", "mean_reversion", "opening_range_breakout"] = "sma"
+    version: Literal["1.0.0"] = "1.0.0"
     fast_window: int = Field(default=3, ge=1, le=100)
     slow_window: int = Field(default=12, ge=2, le=500)
     momentum_threshold: float = Field(default=0.001, ge=0, le=1)
     target_gross_weight: float = Field(default=0.9, ge=0, le=1)
+    entry_z: float = Field(default=1.5, gt=0, le=10)
+    exit_z: float = Field(default=0.25, ge=0, le=10)
+    opening_range_bars: int = Field(default=3, ge=1, le=100)
     model: str = Field(default="llama3.1:8b-instruct-q4_K_M", min_length=1, max_length=120)
     ollama_host: str = "http://localhost:11434"
     model_timeout_seconds: float = Field(default=30, ge=1, le=120)
 
     @model_validator(mode="after")
     def ordered_windows(self):
-        if self.kind == "sma" and self.fast_window >= self.slow_window:
+        if self.kind in {"sma", "trend_following"} and self.fast_window >= self.slow_window:
             raise ValueError("fast_window must be smaller than slow_window")
+        if self.kind == "mean_reversion" and self.exit_z >= self.entry_z:
+            raise ValueError("exit_z must be smaller than entry_z")
         if not self.ollama_host.startswith(("http://", "https://")):
             raise ValueError("ollama_host must be an HTTP(S) URL")
         return self

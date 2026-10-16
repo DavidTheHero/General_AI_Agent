@@ -38,9 +38,19 @@ class RulePolicy:
             close = history.Close
             if self.config.kind == "buy_and_hold":
                 active.append(symbol)
+            elif self.config.kind == "opening_range_breakout":
+                count = self.config.opening_range_bars
+                if len(history) > count and (close.iloc[count:] > history.High.iloc[:count].max()).any():
+                    active.append(symbol)
             elif len(close) >= self.config.slow_window:
-                if self.config.kind == "sma":
+                if self.config.kind in {"sma", "trend_following"}:
                     signal = close.iloc[-self.config.fast_window:].mean() > close.iloc[-self.config.slow_window:].mean()
+                elif self.config.kind == "mean_reversion":
+                    window = close.iloc[-self.config.slow_window:]
+                    deviation = window.std(ddof=0)
+                    held = observation.portfolio.get("positions", {}).get(symbol, {}).get("quantity", 0) > 0
+                    z = (window.iloc[-1] - window.mean()) / deviation if deviation > 1e-12 else 0
+                    signal = deviation > 1e-12 and (z < -self.config.exit_z if held else z <= -self.config.entry_z)
                 else:
                     signal = close.iloc[-1] / close.iloc[-self.config.slow_window] - 1 > self.config.momentum_threshold
                 if signal:
@@ -55,6 +65,7 @@ class OllamaPolicy:
         self.config = config
         self.transport = transport or self._request
         self.name = f"ollama:{config.model}"
+        self.last_audit = None
 
     def _request(self, payload):
         request = Request(f"{self.config.ollama_host.rstrip('/')}/api/chat", data=json.dumps(payload).encode(),
@@ -77,10 +88,20 @@ class OllamaPolicy:
                     "window_features": features, "recent_bar_limit_per_symbol": per_symbol,
                     "bars": {symbol: [{"timestamp": timestamp.isoformat(), **row.to_dict()} for timestamp, row in frame.tail(per_symbol).iterrows()]
                              for symbol, frame in observation.history.items()}}
-        result = self.transport({"model": self.config.model, "stream": False, "format": schema,
+        payload = {"model": self.config.model, "stream": False, "format": schema,
             "options": {"temperature": 0, "num_ctx": 8192, "num_predict": 512}, "messages": [
                 {"role": "system", "content": "You are a paper-trading allocation policy. Use only the supplied completed bars and portfolio. Return a long-only target weight for EVERY listed symbol; total weights must not exceed 1. Never invent prices or trade unsupported symbols. Prefer cash when evidence is weak. Provide a concise decision description, not private reasoning. The host applies risk limits and fills at a later bar; these are simulations, not broker orders."},
-                {"role": "user", "content": json.dumps(evidence)}]})
+                {"role": "user", "content": json.dumps(evidence)}]}
+        self.last_audit = {"model_tag": self.config.model, "strategy_version": self.config.version,
+                           "model_digest": None, "model_identity_verified": False,
+                           "disclosures": ["Model tag is not a verified immutable model digest.", "Historical training contamination is possible; temperature zero does not ensure determinism."],
+                           "request": json.loads(json.dumps(payload)), "response": None}
+        try:
+            result = self.transport(payload)
+            self.last_audit["response"] = json.loads(json.dumps(result))
+        except Exception as error:
+            self.last_audit["error"] = str(error)
+            raise
         return Decision.model_validate_json(result["message"]["content"])
 
 
