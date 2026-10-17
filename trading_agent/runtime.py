@@ -93,6 +93,7 @@ class JobManager:
             raise ValueError("A runtime already owns this trading data directory") from None
         try:
             self.lock = threading.RLock()
+            self.close_lock = threading.Lock()
             self.db = sqlite3.connect(self.root / "jobs.sqlite", check_same_thread=False)
             self.db.row_factory = sqlite3.Row
             self.db.execute("CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, request TEXT, status TEXT, created_at TEXT, updated_at TEXT, error TEXT)")
@@ -339,6 +340,10 @@ class JobManager:
         return path
 
     def close(self):
+        with self.close_lock:
+            self._shutdown()
+
+    def _shutdown(self):
         with self.lock:
             if self.closed:
                 return
