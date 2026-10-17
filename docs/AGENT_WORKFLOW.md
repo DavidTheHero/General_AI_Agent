@@ -75,7 +75,9 @@ Report commands, versions, exit codes, baseline failures, known limits and actua
 
 Documentation/workflow-only changes may document reproduced pre-existing application failures with evidence that application source is unchanged. Never waive a failure introduced by the PR. Windows portability/provider delivery requires its applicable application checks to pass. A platform is unverified until its tests actually run. Re-run affected checks after corrections or base changes.
 
-The **Ticket and scope** policy check tests its own validator, verifies the branch/closing-issue relationship and required PR sections, confirms the linked number identifies a real issue, and rejects accidental local/generated files. It does not establish correctness, prove a reviewer is independent, or replace application/platform CI. Changes to the gate itself require careful lead review.
+The **Ticket and scope** policy check tests its own validator, verifies the branch/closing-issue relationship and required PR sections, confirms the linked number identifies a real issue, and rejects accidental local/generated files. It rejects an incomplete file list: GitHub's [PR file API](https://docs.github.com/en/rest/pulls/pulls#list-pull-requests-files) returns at most 3,000 files. It does not establish correctness or prove a reviewer is independent. Changes to the gate itself require careful lead review.
+
+The **Application (Linux)** job installs Node 24/Python 3.12 dependencies, runs the application tests/build and Python suite, and executes the dated offline demo. Model endpoints point to an unreachable local port so these checks cannot rely on a developer's model service. A passing Linux job does not verify Windows or macOS.
 
 The lead records findings against the PR's exact head SHA. Blocking findings get a correction and another review; a new push requires another final-SHA check. Record an independent AI lead's review as such. When one GitHub account both commits and posts the review, do not represent its comment as a separate GitHub user's approving review.
 
@@ -97,7 +99,7 @@ Verify the merged revision in a clean/detached worktree, re-run the applicable s
 
 ## Repository merge gates
 
-The bootstrap configures a PR requirement, the successful **Ticket and scope** Actions check, up-to-date branches, conversation resolution and protection against force pushes/deletion on `main`, including administrators. With the current single-account workflow, formal approving-review count is zero; independent lead review is a documented process requirement. Add a real required approval when an eligible second account/reviewer is available. Do not label this arrangement as enforced independent human approval.
+Before marking the bootstrap delivered, configure and verify a PR requirement, successful **Ticket and scope** and **Application (Linux)** Actions checks, up-to-date branches, conversation resolution and protection against force pushes/deletion on `main`, including administrators. With the current single-account workflow, formal approving-review count is zero; independent lead review is a documented process requirement. Add a real required approval when an eligible second account/reviewer is available. Do not label this arrangement as enforced independent human approval.
 
 Application/platform CI is delivered separately with the Windows foundation. Once its Windows/macOS jobs have succeeded and their exact check names are known, add them as required checks for application delivery; retain explicit reports of unverified environments until then. Repository settings are external state: record configuration changes and verify them through GitHub, rather than assuming this document enforces them.
 
