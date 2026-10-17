@@ -3,6 +3,9 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 from html import escape
 import json
+import os
+import time
+import uuid
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -13,6 +16,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from .metrics import equity_curve, performance_metrics
+from .fileio import replace_snapshot
 
 
 ASSUMPTIONS = [
@@ -28,11 +32,33 @@ ASSUMPTIONS = [
 ]
 
 
+_WINDOWS = os.name == "nt"
+
+
 def atomic_text(path, content):
     path = Path(path)
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(content, encoding="utf-8")
-    temporary.replace(path)
+    temporary = path.with_name(path.name + "." + uuid.uuid4().hex + ".tmp")
+    try:
+        with open(temporary, "w", encoding="utf-8") as f:
+            f.write(content)
+        if _WINDOWS:
+            deadline = time.monotonic() + 1.0
+            while True:
+                try:
+                    replace_snapshot(temporary, path)
+                    break
+                except PermissionError:
+                    if time.monotonic() >= deadline:
+                        raise
+                    time.sleep(0.005)
+        else:
+            replace_snapshot(temporary, path)
+    finally:
+        try:
+            if temporary.exists():
+                temporary.unlink()
+        except OSError:
+            pass
 
 
 def _number(value, suffix="", digits=2):
