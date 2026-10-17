@@ -52,3 +52,8 @@ test("renaming a local secret does not hide its source path", () => {
 test("empty file lists cannot produce a successful scope check", () => {
     assert.match(validatePullRequest({ ...valid, files: [] }).errors.join("\n"), /no changed files/);
 });
+
+test("an incomplete GitHub file list cannot pass scope review", () => {
+    assert.match(validatePullRequest({ ...valid, changedFileCount: 2 }).errors.join("\n"), /complete PR scope/);
+    assert.deepEqual(validatePullRequest({ ...valid, changedFileCount: 1 }).errors, []);
+});

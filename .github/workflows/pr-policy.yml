@@ -33,7 +33,7 @@ jobs:
             const { validatePullRequest } = await import(pathToFileURL(`${process.env.GITHUB_WORKSPACE}/scripts/pr-policy.mjs`).href);
             const { data: pr } = await github.rest.pulls.get({ ...context.repo, pull_number: context.issue.number });
             const files = await github.paginate(github.rest.pulls.listFiles, { ...context.repo, pull_number: pr.number, per_page: 100 });
-            const result = validatePullRequest({ branch: pr.head.ref, body: pr.body || '', files });
+            const result = validatePullRequest({ branch: pr.head.ref, body: pr.body || '', files, changedFileCount: pr.changed_files });
             if (result.issueNumber) {
               try {
                 const { data: issue } = await github.rest.issues.get({ ...context.repo, issue_number: result.issueNumber });

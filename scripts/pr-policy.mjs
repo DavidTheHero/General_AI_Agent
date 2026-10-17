@@ -1,6 +1,6 @@
 const branchPattern = /^(?:feat|fix|test|docs|chore|review)\/([1-9]\d*)-[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-export function validatePullRequest({ branch, body = "", files = [] }) {
+export function validatePullRequest({ branch, body = "", files = [], changedFileCount = files.length }) {
     const errors = [];
     const match = branchPattern.exec(branch || "");
     const issueNumber = match ? Number(match[1]) : null;
@@ -14,6 +14,7 @@ export function validatePullRequest({ branch, body = "", files = [] }) {
         if (!section?.[1].trim()) errors.push(`Provide a non-empty '${heading}' section in the PR body.`);
     }
     if (!files.length) errors.push("The PR has no changed files to review.");
+    if (files.length !== changedFileCount) errors.push(`Cannot review the complete PR scope: GitHub reports ${changedFileCount} files but returned ${files.length}. Split the PR or investigate pagination.`);
     for (const file of files) {
         // Removing an accidentally tracked local file must remain possible.
         if (file.status === "removed") continue;
