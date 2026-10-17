@@ -3,7 +3,6 @@ import argparse
 from datetime import date, datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import hmac
-import fcntl
 import json
 import os
 from pathlib import Path
@@ -23,6 +22,8 @@ from typing import Literal
 from .config import AgentConfig, Settings
 from .data import DataError, validate_yahoo_window
 from .reporting import atomic_text
+from .filelock import FileLease, LeaseBusy
+from .fileio import open_snapshot
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -76,46 +77,57 @@ def _now():
 
 def _read(path):
     try:
-        return json.loads(path.read_text())
+        with open_snapshot(path) as stream:
+            return json.load(stream)
     except (OSError, ValueError):
         return None
 
 
 class JobManager:
-    def __init__(self, root=None, *, spawn=subprocess.Popen):
+    def __init__(self, root=None, *, spawn=subprocess.Popen, stop_timeout=10):
         self.root = Path(root or runtime_root()).resolve()
         self.root.mkdir(parents=True, exist_ok=True)
-        self.lease = (self.root / "runtime.lock").open("a")
         try:
-            fcntl.flock(self.lease, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            self.lease.close()
+            self.lease = FileLease(self.root / "runtime.lock")
+        except LeaseBusy:
             raise ValueError("A runtime already owns this trading data directory") from None
-        self.lock = threading.RLock()
-        self.db = sqlite3.connect(self.root / "jobs.sqlite", check_same_thread=False)
-        self.db.row_factory = sqlite3.Row
-        self.db.execute("CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, request TEXT, status TEXT, created_at TEXT, updated_at TEXT, error TEXT)")
-        abandoned = self.db.execute("SELECT id, request FROM jobs WHERE status IN ('running','stopping')").fetchall()
-        research_ids = [row["id"] for row in abandoned if json.loads(row["request"])["mode"] == "experiment"]
-        if research_ids:
-            from .research import reconcile_interrupted
-            reconciled = reconcile_interrupted(self.root / "research", research_ids)
-            for job_id in research_ids:
-                output = self.root / job_id / "output"
-                output.mkdir(parents=True, exist_ok=True)
-                if job_id in reconciled:
-                    record = reconciled[job_id]
-                    atomic_text(output / "experiment.json", json.dumps(record, allow_nan=False))
-                    atomic_text(output / "summary.json", json.dumps({key: value for key, value in record.items() if key not in {"environment", "attempts", "protocol"}}, allow_nan=False))
-                attempts = self.root / "research/experiments" / job_id / "attempts.jsonl"
-                if attempts.is_file():
-                    atomic_text(output / "attempts.jsonl", attempts.read_text())
-        self.db.execute("UPDATE jobs SET status='interrupted', updated_at=?, error=? WHERE status IN ('running','stopping')",
-                        (_now(), "Runtime restarted. Review the last saved positions and reports before starting a new simulation; intraday state is not resumed."))
-        self.db.commit()
-        self.processes, self.threads = {}, []
-        self.spawn = spawn
-        self.closing = False
+        try:
+            self.lock = threading.RLock()
+            self.db = sqlite3.connect(self.root / "jobs.sqlite", check_same_thread=False)
+            self.db.row_factory = sqlite3.Row
+            self.db.execute("CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, request TEXT, status TEXT, created_at TEXT, updated_at TEXT, error TEXT)")
+            abandoned = self.db.execute("SELECT id, request FROM jobs WHERE status IN ('running','stopping')").fetchall()
+            research_ids = [row["id"] for row in abandoned if json.loads(row["request"])["mode"] == "experiment"]
+            if research_ids:
+                from .research import reconcile_interrupted
+                reconciled = reconcile_interrupted(self.root / "research", research_ids)
+                for job_id in research_ids:
+                    output = self.root / job_id / "output"
+                    output.mkdir(parents=True, exist_ok=True)
+                    if job_id in reconciled:
+                        record = reconciled[job_id]
+                        atomic_text(output / "experiment.json", json.dumps(record, allow_nan=False))
+                        atomic_text(output / "summary.json", json.dumps({key: value for key, value in record.items() if key not in {"environment", "attempts", "protocol"}}, allow_nan=False))
+                    attempts = self.root / "research/experiments" / job_id / "attempts.jsonl"
+                    if attempts.is_file():
+                        atomic_text(output / "attempts.jsonl", attempts.read_text(encoding="utf-8"))
+            self.db.execute("UPDATE jobs SET status='interrupted', updated_at=?, error=? WHERE status IN ('running','stopping')",
+                            (_now(), "Runtime restarted. Review the last saved positions and reports before starting a new simulation; intraday state is not resumed."))
+            self.db.commit()
+            self.processes, self.threads = {}, []
+            self.spawn = spawn
+            self.closing = False
+            self.closed = False
+            self.stop_timeout = stop_timeout
+            self.forced = set()
+        except BaseException:
+            if getattr(self, "db", None) is not None:
+                try:
+                    self.db.close()
+                except Exception:
+                    pass
+            self.lease.release()
+            raise
 
     def _update(self, job_id, status, error=None):
         self.db.execute("UPDATE jobs SET status=?, updated_at=?, error=? WHERE id=?", (status, _now(), error, job_id))
@@ -170,16 +182,25 @@ class JobManager:
     def _monitor(self, job_id, process):
         code = process.wait()
         if getattr(process, "stdin", None):
-            process.stdin.close()
+            try:
+                process.stdin.close()
+            except (OSError, ValueError):
+                pass
         with self.lock:
             row = self.db.execute("SELECT status FROM jobs WHERE id=?", (job_id,)).fetchone()
             record = _read(self.root / job_id / "output/summary.json")
             stopped = row["status"] == "stopping"
-            complete = code == 0 and record and record.get("status") == "complete"
+            forced = job_id in self.forced
+            complete = (not forced) and code == 0 and record and record.get("status") == "complete"
             status = "complete" if complete else "stopped" if stopped else "failed"
-            error = None if status != "failed" else "; ".join(record.get("errors", [])) if record else f"Worker exited with code {code}; inspect its local worker.log"
-            if status == "stopped" and not record:
+            if forced and stopped:
+                error = "Forced termination after deadline. Review the last atomic snapshot; no work is resumed."
+            elif status == "stopped" and not record:
                 error = "Cancelled before a final report was saved. Review the last atomic progress snapshot; missing results are unavailable and no work is resumed."
+            elif status == "failed":
+                error = "; ".join(record.get("errors", [])) if record else f"Worker exited with code {code}; inspect its local worker.log"
+            else:
+                error = None
             self._update(job_id, status, error or (f"Worker exited with code {code}; simulation did not complete, inspect the report" if status == "failed" else None))
             self.processes.pop(job_id, None)
 
@@ -277,8 +298,36 @@ class JobManager:
             process = self.processes.get(job_id)
             if process and self.db.execute("SELECT status FROM jobs WHERE id=?", (job_id,)).fetchone()[0] != "stopping":
                 self._update(job_id, "stopping")
-                process.send_signal(signal.SIGTERM)
+                if getattr(process, "stdin", None):
+                    try:
+                        process.stdin.close()
+                    except (OSError, ValueError):
+                        pass
+                else:
+                    process.send_signal(signal.SIGTERM)
+                deadline = threading.Thread(target=self._deadline, args=(job_id, process), daemon=True)
+                self.threads.append(deadline)
+                deadline.start()
         return self.get(job_id)
+
+    def _deadline(self, job_id, process):
+        try:
+            process.wait(timeout=self.stop_timeout)
+        except (subprocess.TimeoutExpired, TimeoutError):
+            with self.lock:
+                if job_id in self.processes and process.poll() is None:
+                    self.forced.add(job_id)
+                    try:
+                        process.kill()
+                    except ProcessLookupError:
+                        self.forced.discard(job_id)
+                    except OSError as error:
+                        self.forced.discard(job_id)
+                        self._update(job_id, "stopping", f"Force stop failed: {error}. Worker may still be running; no work is resumed.")
+            try:
+                process.wait(timeout=5)
+            except (subprocess.TimeoutExpired, TimeoutError):
+                pass
 
     def artifact(self, job_id, name):
         self.get(job_id)
@@ -291,20 +340,27 @@ class JobManager:
 
     def close(self):
         with self.lock:
+            if self.closed:
+                return
             self.closing = True
             ids = list(self.processes)
         for job_id in ids:
             self.stop(job_id)
-        for process in list(self.processes.values()):
-            try:
-                process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
         for thread in self.threads:
-            thread.join()
-        self.db.close()
-        self.lease.close()
+            thread.join(timeout=self.stop_timeout + 5)
+        with self.lock:
+            alive_procs = [p for p in self.processes.values() if p.poll() is None]
+            alive_threads = [t for t in self.threads if t.is_alive()]
+        if alive_procs or alive_threads:
+            raise RuntimeError("Workers did not exit within the deadline; lease and DB remain open")
+        with self.lock:
+            if self.closed:
+                return
+            try:
+                self.db.close()
+            finally:
+                self.lease.close()
+            self.closed = True
 
 
 def create_server(manager, *, port=2612, token=None):
@@ -420,18 +476,36 @@ def create_server(manager, *, port=2612, token=None):
 def main():
     parser = argparse.ArgumentParser(description="Persistent local trading simulation runtime")
     parser.add_argument("--port", type=int, default=int(os.environ.get("TRADING_RUNTIME_PORT", "2612")))
+    parser.add_argument("--parent-pipe", action="store_true", default=False)
     args = parser.parse_args()
     manager = JobManager()
-    server = create_server(manager, port=args.port)
-    def stop(_signal, _frame):
-        threading.Thread(target=server.shutdown, daemon=True).start()
-    for value in [signal.SIGINT, signal.SIGTERM]:
-        signal.signal(value, stop)
-    print(f"Trading runtime: http://127.0.0.1:{server.server_port} (simulation only)", flush=True)
+    server = None
     try:
-        server.serve_forever()
+        server = create_server(manager, port=args.port)
+
+        def stop(_signal, _frame):
+            threading.Thread(target=server.shutdown, daemon=True).start()
+
+        for value in [signal.SIGINT, signal.SIGTERM]:
+            signal.signal(value, stop)
+        if hasattr(signal, "SIGBREAK"):
+            signal.signal(signal.SIGBREAK, stop)
+
+        if args.parent_pipe:
+            def _watch_parent_pipe():
+                try:
+                    sys.stdin.read()
+                except Exception:
+                    pass
+                threading.Thread(target=server.shutdown, daemon=True).start()
+            threading.Thread(target=_watch_parent_pipe, daemon=True).start()
+
+        print(f"Trading runtime: http://127.0.0.1:{server.server_port} (simulation only)", flush=True)
+        try:
+            server.serve_forever()
+        finally:
+            server.server_close()
     finally:
-        server.server_close()
         manager.close()
 
 

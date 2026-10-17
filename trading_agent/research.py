@@ -8,10 +8,7 @@ import os
 from pathlib import Path
 import platform
 import re
-import signal
 import sqlite3
-import sys
-import threading
 from typing import Literal
 import importlib.metadata
 
@@ -508,19 +505,11 @@ def main(argv=None):
     parser.add_argument("--runtime-worker", action="store_true")
     args = parser.parse_args(argv)
 
-    def interrupt(_signal, _frame):
-        raise KeyboardInterrupt()
-
-    signal.signal(signal.SIGTERM, interrupt)
-    if args.runtime_worker:
-        def lifetime():
-            while os.read(sys.stdin.fileno(), 1):
-                pass
-            os.kill(os.getpid(), signal.SIGTERM)
-        threading.Thread(target=lifetime, daemon=True).start()
+    from .worker_control import install_worker_control
+    install_worker_control(args.runtime_worker)
     args.output.mkdir(parents=True, exist_ok=True)
     try:
-        request = ResearchJobRequest.model_validate_json(args.request.read_text())
+        request = ResearchJobRequest.model_validate_json(args.request.read_text(encoding="utf-8"))
         if request.mode == "experiment":
             result = run_experiment(request.experiment, args.root, args.output, args.experiment_id)
         else:

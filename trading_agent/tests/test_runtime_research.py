@@ -2,6 +2,7 @@
 import json
 from pathlib import Path
 import sqlite3
+from contextlib import closing
 import tempfile
 import threading
 import unittest
@@ -125,7 +126,7 @@ class ResearchRuntimeTests(unittest.TestCase):
         self.assertTrue(events.startswith(prior_events))
         self.assertEqual([event["event"] for event in map(json.loads, events.splitlines())], ["started", "started", "restart_reconciled", "restart_reconciled"])
         self.assertEqual((output / "attempts.jsonl").read_text(), events)
-        with sqlite3.connect(research_root / "research.sqlite") as database:
+        with closing(sqlite3.connect(research_root / "research.sqlite")) as database, database:
             self.assertEqual(database.execute("SELECT opened_by FROM holdouts WHERE dataset_id=?", (dataset_id,)).fetchone()[0], job_id)
             rows = database.execute("SELECT status,result FROM attempts ORDER BY id").fetchall()
             self.assertTrue(all(status == "interrupted" and json.loads(result)["status"] == "interrupted" for status, result in rows))
@@ -138,7 +139,7 @@ class ResearchRuntimeTests(unittest.TestCase):
         # An event append can precede a crash before metadata/SQLite commits.
         # Reprocessing that earlier state must not duplicate the durable event.
         (directory / "experiment.json").write_text(canonical(record))
-        with sqlite3.connect(research_root / "research.sqlite") as database:
+        with closing(sqlite3.connect(research_root / "research.sqlite")) as database, database:
             database.execute("UPDATE attempts SET status='running',result=NULL")
         reconcile_interrupted(research_root, [job_id])
         self.assertEqual((directory / "attempts.jsonl").read_text(), events)

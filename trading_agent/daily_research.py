@@ -7,10 +7,7 @@ import math
 import os
 from pathlib import Path
 import re
-import signal
 import sqlite3
-import sys
-import threading
 from typing import Literal
 
 import numpy as np
@@ -343,8 +340,10 @@ def run_daily_research(spec, root, output, experiment_id, *, ticker_factory=yf.T
                     stream.flush()
                     os.fsync(stream.fileno())
     finally:
-        save()
-        database.close()
+        try:
+            save()
+        finally:
+            database.close()
     return record
 
 
@@ -358,16 +357,9 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if not re.fullmatch(r"[a-f0-9]{32}", args.experiment_id):
         parser.error("experiment-id must be 32 hexadecimal characters")
-    def interrupt(*_args):
-        raise KeyboardInterrupt()
-    signal.signal(signal.SIGTERM, interrupt)
-    if args.runtime_worker:
-        def lifetime():
-            while os.read(sys.stdin.fileno(), 1):
-                pass
-            os.kill(os.getpid(), signal.SIGTERM)
-        threading.Thread(target=lifetime, daemon=True).start()
-    value = json.loads(args.request.read_text())
+    from .worker_control import install_worker_control
+    install_worker_control(args.runtime_worker)
+    value = json.loads(args.request.read_text(encoding="utf-8"))
     spec = DailyResearchSpec.model_validate(value["daily_research"])
     result = run_daily_research(spec, args.root, args.output, args.experiment_id)
     print(canonical({key: result.get(key) for key in ["experiment_id", "status", "assessment", "promotion_status", "errors", "metrics"]}))
