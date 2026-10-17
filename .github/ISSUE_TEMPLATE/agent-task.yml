@@ -1,0 +1,43 @@
+name: Agent task
+description: A bounded implementation or review task with a verifiable outcome.
+title: "[Task] "
+labels: [agent-task]
+body:
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Problem and expected behavior
+      description: Include concrete source references and evidence; distinguish observations from assumptions.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and ownership
+      description: List allowed files, excluded work, implementer, lead reviewer and dependencies.
+    validations:
+      required: true
+  - type: textarea
+    id: baseline
+    attributes:
+      label: Baseline
+      description: Base revision, relevant versions, dirty-file ownership, applicable checks and existing failures. Exclude secrets.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: State observable completion criteria and the commands/platform checks needed to verify them.
+      placeholder: "- [ ] Expected behavior is reproduced and independently verified."
+    validations:
+      required: true
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: Delivery requirements
+      options:
+        - label: Preserve existing work, stage only scoped files and keep secrets/generated artifacts out of commits.
+          required: true
+        - label: Require independent review and applicable checks on the final PR revision before merging.
+          required: true
