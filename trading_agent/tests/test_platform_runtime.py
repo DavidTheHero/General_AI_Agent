@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 from trading_agent.config import load_config
 from trading_agent.fileio import open_snapshot
-from trading_agent.runtime import JobManager, _read, main
+from trading_agent.runtime import JobManager, _read, create_server, main
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -182,6 +182,20 @@ except KeyboardInterrupt: print('interrupt observed',flush=True)
         replacement = self.manager()
         self.assertEqual(replacement.get(job["id"])["status"], "stopped")
         self.assertFalse(replacement.processes)
+
+    def test_server_binds_loopback_without_reverse_dns_lookup(self):
+        def blocked(*_args, **_kwargs):
+            raise AssertionError("loopback binding must not perform a reverse DNS lookup")
+        with patch.object(socket, "getfqdn", blocked):
+            manager = self.manager()
+            server = create_server(manager, port=0)
+            self.addCleanup(server.server_close)
+            self.assertEqual(server.server_address[0], "127.0.0.1")
+            self.assertGreater(server.server_port, 0)
+            self.assertEqual(server.server_name, "127.0.0.1")
+        with socket.socket() as probe:
+            probe.settimeout(2)
+            probe.connect((server.server_name, server.server_port))
 
     def test_bind_failure_closes_database_and_lease(self):
         with socket.socket() as occupied:

@@ -43,6 +43,8 @@ jobs:
       - run: npm ci
       - run: python -m pip install -r backend/finance/requirements.txt
       - run: python -m pip install -e '.[mcp]'
+      - name: Initialize Matplotlib font cache
+        run: python -c "from matplotlib import font_manager; font_manager.fontManager"
       - run: npm test
       - run: npm run build
       - run: python -m unittest discover -s trading_agent/tests -v

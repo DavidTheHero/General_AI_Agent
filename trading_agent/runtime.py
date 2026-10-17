@@ -13,6 +13,7 @@ import sqlite3
 import subprocess
 import sys
 import threading
+from socketserver import TCPServer
 from uuid import uuid4
 from urllib.parse import parse_qs, urlsplit
 
@@ -370,6 +371,13 @@ class JobManager:
 
 def create_server(manager, *, port=2612, token=None):
     token = token or runtime_token(manager.root)
+    class _LoopbackThreadingHTTPServer(ThreadingHTTPServer):
+        def server_bind(self):
+            # HTTPServer.server_bind resolves the bound address with socket.getfqdn,
+            # which can hang before readiness; a loopback bind never needs a name.
+            TCPServer.server_bind(self)
+            self.server_name, self.server_port = self.server_address[:2]
+
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_args):
             pass
@@ -475,7 +483,7 @@ def create_server(manager, *, port=2612, token=None):
 
         do_GET = handle_request
         do_POST = handle_request
-    return ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    return _LoopbackThreadingHTTPServer(("127.0.0.1", port), Handler)
 
 
 def main():
