@@ -107,7 +107,9 @@ class ResearchRuntimeTests(unittest.TestCase):
         database.close()
         # Dispose of the fixture worker, then restore the crash-persisted job state.
         self.manager.stop(job_id)
-        self.manager.threads[-1].join(2)
+        for thread in self.manager.threads:
+            thread.join(2)
+        self.assertFalse(any(thread.is_alive() for thread in self.manager.threads))
         self.manager.db.execute("UPDATE jobs SET status='stopping' WHERE id=?", (job_id,))
         self.manager.db.commit()
         self.manager.close()
