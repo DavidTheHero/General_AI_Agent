@@ -1,0 +1,50 @@
+name: PR policy
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, edited, ready_for_review]
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+concurrency:
+  group: pr-policy-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  policy:
+    name: Ticket and scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - run: node --test scripts/tests/*.test.mjs
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const { pathToFileURL } = await import('node:url');
+            const { validatePullRequest } = await import(pathToFileURL(`${process.env.GITHUB_WORKSPACE}/scripts/pr-policy.mjs`).href);
+            const { data: pr } = await github.rest.pulls.get({ ...context.repo, pull_number: context.issue.number });
+            const files = await github.paginate(github.rest.pulls.listFiles, { ...context.repo, pull_number: pr.number, per_page: 100 });
+            const result = validatePullRequest({ branch: pr.head.ref, body: pr.body || '', files });
+            if (result.issueNumber) {
+              try {
+                const { data: issue } = await github.rest.issues.get({ ...context.repo, issue_number: result.issueNumber });
+                if (issue.pull_request) result.errors.push('The branch number must identify an issue, not a pull request.');
+              } catch (error) {
+                result.errors.push(`Cannot read linked issue #${result.issueNumber}: ${error.message}`);
+              }
+            }
+            if (result.errors.length) {
+              for (const error of result.errors) core.error(error);
+              core.setFailed('PR ticket/scope policy failed. Correct the description, branch or changed files.');
+            } else {
+              core.info(`Issue #${result.issueNumber}; ${files.length} changed files; ticket/scope policy passed.`);
+            }
