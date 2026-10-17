@@ -1,5 +1,7 @@
 # Contributing
 
+Use the [agent-assisted GitHub delivery workflow](docs/AGENT_WORKFLOW.md) for issues, isolated task branches, scoped commits, independent review, PR checks and verified merges. A local handoff or passing test report is not a merged delivery.
+
 ## Development Workflow
 
 1. Install Node.js 22.13+ (24 LTS recommended), install Python 3.11+, run `npm ci`, create `.venv`, install `backend/finance/requirements.txt`, and copy `.env.example` to `.env`.

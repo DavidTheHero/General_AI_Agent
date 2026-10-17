@@ -29,6 +29,8 @@ Use Node's `node:test` framework in `backend/tests/*.test.js` and Vitest with Te
 
 ## Commit & Pull Request Guidelines
 
+Follow `docs/AGENT_WORKFLOW.md`: start from a bounded GitHub issue, use an isolated task worktree and `<type>/<issue>-<name>` branch, stage only owned files, and open a linked draft PR. Verify the exact local model/provider before each handoff; review returned diffs and run checks independently. Record lead review against the final head SHA. Merge only that reviewed revision after applicable checks and verify the merged result. Keep `Communication.md` as optional local coordination; the issue/PR records delivery. Preserve the original dirty checkout and never commit secrets or generated artifacts.
+
 History uses brief subjects such as `re-organising` and `v1.0`; no formal commit convention is established. Write concise subjects describing the change and keep commits reviewable. PRs should explain behavior changes, report validation, and reference an issue or relevant `ROADMAP.md` item. Update documentation when behavior changes; include timing notes or screenshots for performance work.
 
 ## Security & Configuration
