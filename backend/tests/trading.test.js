@@ -120,25 +120,36 @@ test("real trading MCP controls an independent runtime and produces offline repo
     const previous = { data: process.env.TRADING_DATA_DIR, port: process.env.TRADING_RUNTIME_PORT };
     process.env.TRADING_DATA_DIR = directory;
     process.env.TRADING_RUNTIME_PORT = "0";
-    const runtime = spawn(pythonCommand(), ["-m", "trading_agent.runtime", "--port", "0"], { stdio: ["ignore", "pipe", "pipe"] });
+    const runtime = spawn(pythonCommand(), ["-m", "trading_agent.runtime", "--port", "0", "--parent-pipe"], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
     let logs = "";
     runtime.stdout.on("data", (data) => { logs += data; });
     runtime.stderr.on("data", (data) => { logs += data; });
     const clients = [];
     t.after(async () => {
-        for (const client of clients) await client.close();
-        const ended = once(runtime, "exit");
-        runtime.kill("SIGTERM");
-        await ended;
-        for (const [name, value] of [["TRADING_DATA_DIR", previous.data], ["TRADING_RUNTIME_PORT", previous.port]]) {
-            if (value === undefined) delete process.env[name]; else process.env[name] = value;
+        try {
+            for (const client of clients) await client.close();
+            if (runtime.exitCode === null && runtime.signalCode === null) {
+                const ended = once(runtime, "exit", { signal: AbortSignal.timeout(15000) });
+                runtime.stdin.end();
+                try { await ended; } catch (error) {
+                    runtime.kill("SIGKILL");
+                    if (runtime.exitCode === null && runtime.signalCode === null) {
+                        await once(runtime, "exit", { signal: AbortSignal.timeout(5000) });
+                    }
+                    throw error;
+                }
+            }
+        } finally {
+            for (const [name, value] of [["TRADING_DATA_DIR", previous.data], ["TRADING_RUNTIME_PORT", previous.port]]) {
+                if (value === undefined) delete process.env[name]; else process.env[name] = value;
+            }
+            async function unlock(path) {
+                await chmod(path, 0o700);
+                for (const entry of await readdir(path, { withFileTypes: true })) if (entry.isDirectory()) await unlock(join(path, entry.name));
+            }
+            await unlock(directory); // Immutable dataset directories need write permission only for fixture cleanup.
+            await rm(directory, { recursive: true, force: true });
         }
-        async function unlock(path) {
-            await chmod(path, 0o700);
-            for (const entry of await readdir(path, { withFileTypes: true })) if (entry.isDirectory()) await unlock(join(path, entry.name));
-        }
-        await unlock(directory); // Immutable dataset directories need write permission only for fixture cleanup.
-        await rm(directory, { recursive: true, force: true });
     });
     for (let attempt = 0; attempt < 150 && !/127\.0\.0\.1:(\d+)/.test(logs); attempt++) {
         if (runtime.exitCode !== null) assert.fail(logs);

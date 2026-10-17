@@ -89,14 +89,16 @@ test("comparison history is bounded", () => {
 
 test("semantic memory persists across restarts and supports legacy embeddings", (t) => {
     const directory = mkdtempSync(join(tmpdir(), "agent-memory-"));
-    t.after(() => rmSync(directory, { recursive: true }));
     const path = join(directory, "memory.db");
     const first = new SemanticMemoryStore(path);
     first.addEntry("one", "user", "Visiting Paris in summer");
     first.db.prepare("UPDATE semantic_memory SET embedding = ?").run("[0,0]");
     first.close();
     const second = new SemanticMemoryStore(path);
-    t.after(() => second.close());
+    t.after(() => {
+        second.close();
+        rmSync(directory, { recursive: true });
+    });
     assert.ok(second.query("one", "Paris trip").length);
     assert.equal(second.query("other", "Paris trip").length, 0);
 });
