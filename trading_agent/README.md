@@ -6,6 +6,15 @@ A modular Python framework for autonomous **paper simulations** over NYSE sessio
 
 From the repository root, using Python 3.11+:
 
+For Windows PowerShell, follow the [repository setup](../README.md#quick-start) and replace `.venv/bin/python` in this guide with `.\.venv\Scripts\python.exe`. For example:
+
+```powershell
+.\.venv\Scripts\python.exe -m trading_agent demo
+.\.venv\Scripts\python.exe -m unittest discover -s trading_agent/tests -v
+```
+
+See [foreground Windows operation, shutdown and interrupted-job recovery](../deploy/README.md#windows-foreground-operation). macOS launchd remains available separately.
+
 ```bash
 python3 -m venv .venv
 .venv/bin/python -m pip install -e .

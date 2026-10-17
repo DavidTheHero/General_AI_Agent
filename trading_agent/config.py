@@ -77,4 +77,4 @@ class AgentConfig(Settings):
 
 
 def load_config(path: str | Path | None = None) -> AgentConfig:
-    return AgentConfig.model_validate(json.loads(Path(path).read_text()) if path else {})
+    return AgentConfig.model_validate(json.loads(Path(path).read_text(encoding="utf-8")) if path else {})

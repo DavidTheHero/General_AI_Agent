@@ -2,6 +2,7 @@
 import json
 from pathlib import Path
 import sqlite3
+from contextlib import closing
 import tempfile
 import threading
 import unittest
@@ -45,8 +46,10 @@ class ResearchRuntimeTests(unittest.TestCase):
         experiment = {"dataset_id": "a" * 64, "config": {"symbols": ["DEMO_A"], "interval": "30m"},
                       "candidates": [{"kind": "trend_following"}], "train_sessions": 2, "validation_sessions": 1, "final_sessions": 2}
         job = self.manager.start({"mode": "experiment", "experiment": experiment})
+        monitor = self.manager.threads[-1]
         stopped = self.manager.stop(job["id"])
-        self.manager.threads[-1].join(2)
+        monitor.join(2)
+        self.assertFalse(monitor.is_alive())
         self.assertIn(stopped["status"], {"stopping", "stopped"})
         self.assertEqual(self.manager.get(job["id"])["status"], "stopped")
         self.assertIn("before a final report", self.manager.get(job["id"])["error"])
@@ -106,7 +109,9 @@ class ResearchRuntimeTests(unittest.TestCase):
         database.close()
         # Dispose of the fixture worker, then restore the crash-persisted job state.
         self.manager.stop(job_id)
-        self.manager.threads[-1].join(2)
+        for thread in self.manager.threads:
+            thread.join(2)
+        self.assertFalse(any(thread.is_alive() for thread in self.manager.threads))
         self.manager.db.execute("UPDATE jobs SET status='stopping' WHERE id=?", (job_id,))
         self.manager.db.commit()
         self.manager.close()
@@ -125,7 +130,7 @@ class ResearchRuntimeTests(unittest.TestCase):
         self.assertTrue(events.startswith(prior_events))
         self.assertEqual([event["event"] for event in map(json.loads, events.splitlines())], ["started", "started", "restart_reconciled", "restart_reconciled"])
         self.assertEqual((output / "attempts.jsonl").read_text(), events)
-        with sqlite3.connect(research_root / "research.sqlite") as database:
+        with closing(sqlite3.connect(research_root / "research.sqlite")) as database, database:
             self.assertEqual(database.execute("SELECT opened_by FROM holdouts WHERE dataset_id=?", (dataset_id,)).fetchone()[0], job_id)
             rows = database.execute("SELECT status,result FROM attempts ORDER BY id").fetchall()
             self.assertTrue(all(status == "interrupted" and json.loads(result)["status"] == "interrupted" for status, result in rows))
@@ -138,7 +143,7 @@ class ResearchRuntimeTests(unittest.TestCase):
         # An event append can precede a crash before metadata/SQLite commits.
         # Reprocessing that earlier state must not duplicate the durable event.
         (directory / "experiment.json").write_text(canonical(record))
-        with sqlite3.connect(research_root / "research.sqlite") as database:
+        with closing(sqlite3.connect(research_root / "research.sqlite")) as database, database:
             database.execute("UPDATE attempts SET status='running',result=NULL")
         reconcile_interrupted(research_root, [job_id])
         self.assertEqual((directory / "attempts.jsonl").read_text(), events)

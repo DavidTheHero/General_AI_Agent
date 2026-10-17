@@ -48,7 +48,28 @@ Run the script without `--install` to inspect the generated plist. Logs are unde
 .venv/bin/python deploy/install_service.py trading --uninstall
 ```
 
-For Linux, supervise `.venv/bin/python -m trading_agent.runtime` and `node --env-file-if-exists=.env backend/server.js` with your existing process supervisor, using this repository as the working directory and the same local user. The runtime currently requires POSIX file locking.
+For Linux, supervise `.venv/bin/python -m trading_agent.runtime` and `node --env-file-if-exists=.env backend/server.js` with your existing process supervisor, using this repository as the working directory and the same local user. Runtime ownership uses POSIX `flock` on macOS/Linux and a Windows byte-range lease on Windows.
+
+## Windows foreground operation
+
+Follow the [PowerShell setup](../README.md#quick-start), then run from the repository root:
+
+```powershell
+npm run build
+npm run trading:runtime
+# In a second terminal:
+npm start
+```
+
+Open http://localhost:2610. Keep Ollama running separately if using chat or an Ollama policy. These are foreground processes, not installed Windows services. No Windows service installer, Task Scheduler configuration, sleep/logout survival or uptime guarantee is provided. The existing macOS launchd installer remains macOS-only; its execution was not verified during the Windows review.
+
+Use Ctrl+C to stop the foreground runtime. The Node launcher keeps Python in a separate process group on Windows and retains a private stdin lifetime pipe. Normal signal handling closes that pipe; loss of the Node launcher also closes it so Python can shut down its workers. The launcher still waits for Python during normal operation. Direct `.\.venv\Scripts\python.exe -m trading_agent.runtime` also supports Ctrl+C, but has no Node parent lifetime pipe unless explicitly passed `--parent-pipe` with a real owning pipe.
+
+Job cancellation closes the worker's lifetime pipe, interrupts its main thread and wakes watch sleeps. Workers save the actual partial portfolio and reports when cleanup can run. A worker that has not exited after the default ten-second grace is forcibly stopped; the job explicitly identifies forced termination and directs you to the last atomic snapshot. Missing observations or reports remain unavailable; shutdown does not invent liquidation fills. Forced termination of Python itself, power loss, terminal-host job termination, sleep and OS failure can prevent final cleanup. Restart marks saved `running`/`stopping` jobs `interrupted`; it never silently replays or resumes them. Review saved positions, ledgers and notices before explicitly starting new work.
+
+The npm launchers load `.env`. Direct Python commands use process environment variables. The macOS service installer copies exported `TRADING_DATA_DIR` and `TRADING_RUNTIME_PORT` from its environment; it does not load the runtime's settings from `.env`. Use the same data directory, port and user for runtime and MCP clients.
+
+Keep `TRADING_DATA_DIR` on a private local disk. Windows `0600`/read-only mode bits do not establish POSIX-equivalent ACLs; protect the directory and bearer token with the user's Windows ACLs. Checksums remain the immutable-data audit boundary. Snapshot reads and replacements use Windows sharing/rename APIs so polling can retain the old complete version while a writer publishes the next. An external program denying replacement can still cause a bounded one-second write failure; the old destination is preserved. Windows 11 on local NTFS was exercised. Network shares, cloud-synced directories and older Windows/filesystem fallback behavior are unverified. Windows service installation is not provided. See the [initial commands and results](../docs/WINDOWS_REVIEW.md) and the [independent shutdown and setup follow-up](../docs/PEER_WINDOWS_REVIEW.md#lead-follow-up-win-02-f1-correction-and-independent-verification). The follow-up verifies concurrent close serialization, retention of database/lease ownership on a failed close, and successful retry; application delivery remains local until its Windows PR is merged.
 
 ## Persistence and operation
 

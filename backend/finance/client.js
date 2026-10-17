@@ -3,11 +3,17 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { z } from "zod";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
-const localPython = `${root}.venv/${process.platform === "win32" ? "Scripts/python.exe" : "bin/python"}`;
-export const pythonCommand = () => process.env.MCP_PYTHON || (existsSync(localPython) ? localPython : "python3");
+export const pythonCommand = ({ platform = process.platform, rootDirectory = root, env = process.env, exists = existsSync } = {}) => {
+    const envPython = env.MCP_PYTHON;
+    if (typeof envPython === "string" && envPython.length > 0) return envPython;
+    const localPython = join(rootDirectory, ".venv", platform === "win32" ? "Scripts/python.exe" : "bin/python");
+    if (exists(localPython)) return localPython;
+    return platform === "win32" ? "python" : "python3";
+};
 const barSchema = z.object({ symbol: z.string(), date: z.string(), timestamp: z.string(),
     open: z.number(), high: z.number(), low: z.number(), close: z.number(), volume: z.number() });
 const metadataSchema = z.object({ symbol: z.string(), currency: z.string(), exchange: z.string(),

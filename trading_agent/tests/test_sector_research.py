@@ -3,6 +3,7 @@ from copy import deepcopy
 import json
 from pathlib import Path
 import sqlite3
+from contextlib import closing
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -113,7 +114,7 @@ class SectorResearchTests(unittest.TestCase):
         self.assertEqual(len(events), 48)
         self.assertEqual([event["event"] for event in events], ["started", "completed"] * 24)
         self.assertEqual(json.loads((self.output / "daily-study.json").read_text()), result)
-        with sqlite3.connect(self.root / "daily-studies.sqlite") as database:
+        with closing(sqlite3.connect(self.root / "daily-studies.sqlite")) as database, database:
             status, snapshot = database.execute("SELECT status,protocol FROM studies WHERE id=?", (result["experiment_id"],)).fetchone()
         self.assertEqual(status, "complete")
         self.assertEqual(json.loads(snapshot), result)
@@ -145,7 +146,7 @@ class SectorResearchTests(unittest.TestCase):
 
     def test_existing_attempt_lineage_increases_multiplicity_beyond_minimum_ten(self):
         self.root.mkdir()
-        with sqlite3.connect(self.root / "daily-studies.sqlite") as database:
+        with closing(sqlite3.connect(self.root / "daily-studies.sqlite")) as database, database:
             database.execute("CREATE TABLE studies (id TEXT PRIMARY KEY, protocol TEXT, status TEXT)")
             prior = {"protocol_id": "old-declared-protocol", "candidate_grid": [{"configuration": number} for number in range(8)]}
             database.execute("INSERT INTO studies VALUES (?,?,?)", (uuid4().hex, json.dumps(prior), "failed"))
