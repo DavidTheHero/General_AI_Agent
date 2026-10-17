@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-The active runtime is JavaScript: `backend/server.js` starts Express, `backend/app.js` defines API routes, and `backend/agent.js` orchestrates LangChain.js with local Ollama. Keep model prompts and schemas in `backend/llm.js`, adapters in `backend/tools.js`, arithmetic in `backend/calculator.js`, finance MCP server/client and package operations in `backend/finance/`, and SQLite/structured memory in `backend/memory.js`. The Python simulation framework lives in `trading_agent/` with configuration examples in `examples/`; keep policies, data ingestion, accounting, orchestration, metrics and reporting separate. React lives in `frontend/src/`; Vite configuration is in `frontend/vite.config.js`. Backend tests live in `backend/tests/`, and React tests sit beside components. Existing Python files, `templates/`, and `static/` remain migration references and are not required by the Node runtime.
+The active runtime is JavaScript: `backend/server.js` starts Express, `backend/app.js` defines API routes, and `backend/agent.js` orchestrates LangChain.js with local Ollama. Keep model prompts and schemas in `backend/llm.js`, adapters in `backend/tools.js`, arithmetic in `backend/calculator.js`, finance MCP server/client and package operations in `backend/finance/`, and SQLite/structured memory in `backend/memory.js`. The Python simulation framework lives in `trading_agent/` with configuration examples in `examples/`; keep policies, data ingestion, accounting, orchestration, metrics and reporting separate. React lives in `frontend/src/`; Vite configuration is in `frontend/vite.config.js`. Backend tests live in `backend/tests/`, and React tests sit beside components. The superseded Python chat application and Flask UI have been removed; use Git history for migration references. See `docs/REPOSITORY_CLEANUP.md` for retention decisions.
 
 ## Build, Test, and Development Commands
 
@@ -12,6 +12,7 @@ Use Node.js 22.13+ (24 LTS recommended) and Python 3.11+ for finance MCP. Run co
 npm ci
 python3 -m venv .venv
 .venv/bin/python -m pip install -r backend/finance/requirements.txt
+.venv/bin/python -m pip install -e '.[mcp]'
 cp .env.example .env
 ollama pull llama3.1:8b-instruct-q4_K_M
 npm run dev

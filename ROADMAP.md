@@ -46,6 +46,8 @@ Test weekly volatility-normalized short-term loser recovery, four configurations
 
 ## Simulated strategy research platform — design and delivery plan (2026-10-15)
 
+Historical implementation plan and delivery record. Baseline gaps and test counts below describe that delivery, not the current backlog or a fresh verification.
+
 This section supersedes the trading claims below. Trading remains simulated. The objective is a reproducible research workflow before a larger strategy catalog. A successful backtest is not evidence of an economic edge by itself.
 
 ### Verified starting point
@@ -125,130 +127,26 @@ A live Ollama/Yahoo run resolved FPT Corporation to FPT.VN in Vietnam and genera
 - **Observability**: Each response returns latency, component timings, tool usage, approximate token counts, and stock planner traces. React displays these details.
 - **Tests**: Node tests cover tools, memory, concurrency, agent behavior, and API contracts; React tests cover chat, context, reset, failures, and keyboard interaction.
 
-## Proposed Next Release: Useful Tools with Verifiable Answers
+## Delivered assistant capabilities and deferred ideas
 
-**Status: yfinance data capability families exposed through MCP; all seven finance workspace workflows implemented; non-finance integrations remain proposals.** Build for the current local, personal-use assistant. Prioritize finance through `yfinance`, followed by expanded Open-Meteo and Open Library. Defer Frankfurter currency conversion until the finance foundation is reliable. Keep the Express API contract and React chat flow. The model should select tools and extract inputs; calculations, filtering, and factual results should come from application code and provider data.
+The earlier finance release plan is implemented, rather than the next release. Current entry points and setup are documented in [README.md](README.md); the [finance capability guide](backend/finance/CAPABILITIES.md) maps all 18 MCP tools and their limits.
 
-### First: Close the Reliability Gaps
+### Delivered
 
-Recent failures exposed two distinct problems: the router interpreted a company name as arithmetic, and a stock provider rejected requests. More tools will magnify these problems unless each integration has a clear input and failure contract.
+- Express/React chat with LangChain.js, local Ollama, validated tool arguments, bounded tool execution, session context and SQLite semantic recall.
+- Finance MCP data families: search, prices/history, FX, fundamentals, statements, actions, estimates, holders, funds, options, calendars, markets, sectors, screening and bounded streaming.
+- Seven Finance workspace reports: company research, company comparison, earnings, ETF overlap, explained screening, portfolio currency attribution and on-demand market brief. Calculations remain deterministic; reports disclose dates, sources and partial data.
+- Independent trading workers, durable job records, MCP control, dashboard polling and macOS launchd setup. Interrupted intraday portfolios still require review; automatic recovery is deferred.
+- Offline Node/React/Python tests and Linux application CI. Passing local checks do not establish Windows/macOS CI results or an economic edge.
 
-- Validate tool arguments before making requests. Ask a targeted clarification for missing or ambiguous inputs rather than inventing an amount, location, currency, or title.
-- Keep errors attributable to the provider. Distinguish invalid input, no results, timeouts, and rate limits. Do not let the model turn failed requests into apparent factual answers.
-- Include a source link and the relevant data date in answers. For forecasts, distinguish retrieval time from forecast time.
-- Retain the existing timeout behavior. Add retries only for a demonstrated transient failure; do not retry access-denied responses.
+### Deferred, without a delivery commitment
 
-**Acceptance:** mocked tests verify each failure path; conversation tests cover clarification replies and changes of topic. Existing stock and calculator regressions remain green.
+The research priorities and promotion blockers at the top of this document take precedence over these optional assistant features:
 
-### 1. Finance: Yahoo Finance through `yfinance`
+- Expanded Open-Meteo forecasts/air quality and Open Library book discovery.
+- Standalone amount-based/historical currency conversion. Existing quote conversion already uses Yahoo FX; a Frankfurter adapter is optional.
+- Chat streaming, browser end-to-end tests, semantic-memory inspection/export and retention controls.
+- Scheduled reports, persistent portfolios, multi-user authentication, external session/vector stores and container deployment.
+- Additional finance providers or entertainment integrations only after a separate scope decision.
 
-**Pitch:** make company lookup, stock history, comparisons, and market-overview questions work through one focused data adapter. “Take-Two Interactive stock” should resolve to TTWO; “How is the stock market today?” should return a clearly labeled snapshot of selected benchmarks instead of asking for a company ticker.
-
-**Architecture (implemented):** Express, LangChain.js, Ollama, and React remain the application stack. `backend/finance/server.py` exposes yfinance search, daily history, and quotes through the official Python MCP SDK. `backend/finance/client.js` uses the official JavaScript MCP SDK over stdio: initialization, tool discovery, validated tool calls, bounded timeouts, serialized requests, and subprocess shutdown. The backend creates one lazy connection; the standalone CLI also supports reuse by other local MCP hosts. Python requirements are pinned in `backend/finance/requirements.txt`. Remote HTTP hosting is deferred.
-
-**Completed:** direct JavaScript stock HTTP calls have been replaced by MCP calls; offline protocol and agent tests cover discovery, tool execution, invalid arguments, provider failures, and process startup. A live TTWO quote succeeded. The Finance workspace now provides all seven workflows below, including benchmark snapshots and aligned adjusted-price comparisons. Request-local duplicate calls are reused; cross-request caching remains deferred.
-
-**Smallest release:** ticker/company search, latest available daily prices, daily OHLCV history, and comparisons of up to four stocks. Use a fixed, disclosed US market basket (S&P 500, Nasdaq Composite, Dow Jones) for otherwise unspecified market-overview questions; clarify other markets. Retain symbol, exchange, currency, exchange timezone, observation date/time, and source in normalized results. Do not treat a daily close as a guaranteed live quote.
-
-**Calculation rules:** calculate returns in application code, align comparison dates across symbols, and explicitly choose adjusted versus unadjusted prices. Label comparisons based on adjusted prices accordingly. Missing prices stay missing; do not substitute zero or calculate changes across unavailable observations. Cache repeated lookups briefly and identify cached observation times.
-
-**Failure contract:** distinguish unknown symbols, empty histories, provider throttling/access failures, and adapter startup/timeouts. `yfinance` still depends on Yahoo availability; it cannot guarantee elimination of 403 or 429 responses. Stock requests now use the MCP adapter exclusively; report provider failures rather than silently falling back to another data path.
-
-**Acceptance:** mocked adapter and Node integration tests cover company→ticker resolution, TTWO quotes, market-overview routing, session follow-ups, multiple currencies, non-trading days, missing observations, adjusted-price comparisons, and provider/process failures. A live smoke test verifies TTWO plus the benchmark basket. Existing API fields, stock plan traces, and React behavior remain compatible; setup instructions explain the new Python dependency.
-
-**Currency follow-ups (implemented):** store the last stock quote in session metadata and expose `exchange_rate` through MCP. Convert its native price with Yahoo FX pairs such as `USDGBP=X`; show stock and FX observation dates separately. Currency changes do not trigger stock searches or overwrite the original price. Frankfurter is unnecessary for this quote-conversion feature.
-
-**Broader yfinance capability review (MCP tools now implemented):** [official API reference](https://ranaroussi.github.io/yfinance/reference/index.html). The server exposes 18 bounded tools and `yfinance://capabilities`, including statements, holders, corporate actions, funds, options, markets, screening and short streaming snapshots. Chat discovers the selected tool schema and generates validated arguments. See [CAPABILITIES.md](backend/finance/CAPABILITIES.md) for full mappings, administrative exclusions and usage. The priority table below now describes richer product workflows on top of these APIs, not missing MCP endpoints.
-
-| Priority | Candidate MCP capability | yfinance surface | Delivery requirement |
-| --- | --- | --- | --- |
-| Next | Market benchmark snapshot | Index `Ticker.history`; `Market.summary` | Disclose benchmark basket, exchange times, and missing observations. |
-| Next | Company profile and fundamentals | `Ticker.get_info`, `get_fast_info` | Select useful fields; preserve absent metrics and currency units. |
-| Next | Earnings dates and corporate actions | `get_earnings_dates`, dividends, splits | Separate scheduled dates from confirmed events; bound date ranges. |
-| Later | Financial statements | Income statement, balance sheet, cash flow | Identify annual/quarterly periods and reported currencies; bound rows. |
-| Later | Analyst estimates and holders | Price targets, estimates, institutional holdings | Identify observation periods and distinguish estimates from facts. |
-| Later | ETF/fund details | `FundsData` | Return selected holdings and exposure with available dates. |
-| Later | Sector discovery and screening | `Sector`, `Industry`, `screen` | Validate filters and cap result counts. |
-| Deferred | Options and streaming | Option chains, `WebSocket` | Separate expiry/strike schemas and lifecycle work; no trading actions. |
-
-**Product workflow delivery:** company research, comparison dashboard, earnings explorer, ETF overlap, explained screener, portfolio currency attribution and on-demand market morning brief are implemented. React provides charts, tables, source drill-down and partial-data warnings; `/finance/workspace` validates inputs and runs deterministic calculations through the existing MCP client. Offline tests cover calculations, failures, endpoint validation, chat routing and all seven forms; live smoke checks returned provider data for each workflow. Scheduled delivery, persistent portfolios and trading execution remain deferred. No Alpha Vantage integration is planned for this release.
-
-**Source and usage:** [official yfinance repository](https://github.com/ranaroussi/yfinance). The library is open source and unaffiliated with Yahoo; its documentation describes research/educational use and Yahoo data as intended for personal use. Reassess data rights before commercial deployment.
-
-### Deferred: Frankfurter Currency Conversion
-
-**Pitch:** answer “Convert £100 to USD” and “What was the EUR/GBP rate on 1 June 2026?” with explicit amounts, currencies, and rate dates. This adds a useful finance capability without stock-feed dependencies or API keys.
-
-**Smallest release:** one currency-conversion tool accepting an amount, source currency, target currency, and optional date. Fetch the rate, multiply in JavaScript, and round only the displayed result using the target currency's minor units. State that the result uses a reference rate and excludes bank fees. Show the returned rate date, including when the requested date has no published observation.
-
-**Boundaries:** no live forex trading, bank transfers, exchange-rate charts, or inferred historical rates. Clarify ambiguous symbols such as `$` unless the conversation establishes the currency. Reject unsupported currencies and future historical dates before calculating. A simple bounded backend cache can reuse published rates; no separate cache service is needed.
-
-**Acceptance:** tests cover GBP→USD, historical conversion, weekend dates, zero amounts, unsupported currencies, ambiguous `$`, and provider failures. A follow-up such as “Now in euros” retains the amount and source currency within its session.
-
-**Provider:** [Frankfurter documentation](https://frankfurter.dev/). Free public access without a key; daily reference data. Use the current v2 API. Provider-specific rates have their own terms.
-
-### 2. Open-Meteo: Forecasts and Air Quality
-
-**Pitch:** extend the existing weather integration to answer “Will it rain in London tomorrow?” and “What is the air quality there?” Reuse location resolution instead of adding another weather provider.
-
-**Smallest release:** a seven-day daily forecast with temperature range and precipitation probability, plus current AQI and its named scale. Resolve relative dates in the selected location's timezone. Store location coordinates and timezone for follow-ups; request only the variables needed for the question.
-
-**Boundaries:** clarify ambiguous locations, keep Celsius as the existing default, and support explicit Fahrenheit requests. Forecasts are predictions; avoid guarantees about rain or claims that an AQI reading means an activity is medically safe. Defer travel planners and weather notifications.
-
-**Acceptance:** tests cover tomorrow across timezone boundaries, Celsius/Fahrenheit, missing forecast observations, named AQI scales, unavailable data, and “What about tomorrow?” after a location-specific question. Preserve current-weather behavior and include Open-Meteo attribution.
-
-**Provider:** [Open-Meteo documentation](https://open-meteo.com/en/docs) and [pricing](https://open-meteo.com/en/pricing). The hosted free tier is for non-commercial use with rate limits. Recheck terms before commercial deployment.
-
-### 3. Open Library: Book Discovery
-
-**Pitch:** provide grounded book and author searches: “Find books about reinforcement learning” or “Who wrote this title?” Return a small set of identifiable works rather than invented recommendations.
-
-**Smallest release:** search by title, author, or subject; return up to five matches with title, author, first publication year when available, and an Open Library link. Use stable work identifiers to handle “Tell me about the second one.” Distinguish works from editions; missing descriptions or ISBNs must remain missing.
-
-**Boundaries:** no bulk harvesting, full-text download promises, or claims that publication metadata establishes book quality. Cover images and recommendation ranking can follow after text search is reliable.
-
-**Acceptance:** tests cover duplicate editions, ambiguous titles, absent authors/years, empty results, ordinal follow-ups, and HTTP 429. Identify the application in requests, cache repeated searches, and pace requests to the provider's published limit.
-
-**Provider:** [Open Library API guidance](https://openlibrary.org/developers/api). No key; default limit is one request per second. Intended for human book discovery, not high-traffic commercial infrastructure.
-
-### Delivery and Deferred Decisions
-
-Each integration should be a focused change to JavaScript schemas, adapters, session context, and tests. Split an adapter into its own module when adding it makes `backend/tools.js` harder to review; avoid introducing a plugin framework. Add React presentation only when existing text responses cannot communicate the result clearly.
-
-Release each tool after `npm test` and `npm run build` pass, followed by a live smoke test and a documented failure example. A successful API response alone is insufficient: verify routing, argument extraction, follow-up behavior, source attribution, and displayed results together.
-
-Defer TMDB until entertainment features are a priority; its free use requires non-commercial use and attribution. See [TMDB's FAQ](https://developer.themoviedb.org/docs/faq). Finance work will focus on `yfinance`; adding other finance providers or paid subscriptions requires a separate scope decision.
-
-Keep Redis, managed vector stores, background workers, and deployment infrastructure in the backlog until measured usage warrants them.
-
-### 2. Upcoming Enhancements
-1. **Planner & Memory Upgrades**
-   - Pluggable embedding backends (local hashed encoder vs. OpenAI, Cohere, Instructor, etc.) with config-driven selection.
-   - Administrative APIs/UI toggles to inspect/delete specific semantic entries, export conversation history, and show retrieved snippets inline.
-   - Background cleanup jobs (age-based pruning, session archiving) so SQLite/pgvector stores stay lean.
-   - Additional planners (weather workflows, multi-tool intents, reminders) using the same plan→act→reflect pattern introduced for stocks.
-
-2. **Persistent Storage**
-   - Replace browser session storage with Redis or another external store for structured metadata; move semantic embeddings to pgvector/SQLite per user.
-   - Add TTL/retention policies per context block (weather < 24h, facts < 30d, reminders with due dates).
-
-3. **Expanded Tests**
-   - Network-mocked tests for each tool + LangChain follow-up classifier.
-   - Broaden Express integration tests for multi-turn conversations and external service failures.
-   - Front-end smoke tests (Playwright or Cypress) for the React UI.
-
-4. **Chat UI Enhancements**
-   - Streaming responses + typing indicators.
-   - Toggle panels showing structured metadata, retrieved semantic snippets, and timing breakdowns per turn.
-   - Mobile-friendly layout, theming, and keyboard shortcuts (Enter/Shift+Enter already available).
-
-5. **Deployment Considerations**
-   - Dockerize Node.js + React + Ollama (docker-compose, env templates).
-   - Background workers for long-running tasks.
-   - Document rate limits + fallback strategies in README.
-
-### 3. Long-Term Ideas
-- **Multi-user auth / session routing** with per-user memory stores and quotas.
-- **Vector memory** backed by a managed vector DB (Pinecone, Weaviate) for richer semantic recall + RAG.
-- **Tool orchestration / planning** via LangChain chains or a lightweight planner to coordinate multi-step tool usage.
-- **LLM observability** dashboards: aggregate timings, errors, token usage across sessions for ops visibility.
+Keep the existing local runtime and macOS deployment tooling. Extra infrastructure should address measured needs. Chat checkpoints, automatic portfolio recovery and broker execution are separate work, not implied by the delivered worker service.

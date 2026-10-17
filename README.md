@@ -72,7 +72,7 @@ Express serves both the built React UI and API at **http://localhost:2610**. The
 
 | Path | Purpose |
 | --- | --- |
-| `trading_agent/`, `examples/trading_*.json` | Python intraday agent, policies, portfolio metrics, reports, and configuration examples. |
+| `trading_agent/`, `examples/` | Python simulation and research framework, policies, accounting, reports, and examples. |
 | `trading_agent/runtime.py`, `trading_agent/mcp_server.py`, `backend/trading/` | Durable job service, trading MCP tools and Node integration. |
 | `frontend/src/TradingDashboard.jsx`, `deploy/` | Live simulation dashboard and macOS service setup. |
 | `backend/server.js` | Server startup and shutdown. |
@@ -80,14 +80,14 @@ Express serves both the built React UI and API at **http://localhost:2610**. The
 | `backend/agent.js`, `backend/agent-loop.js` | Session context, model/tool loop, stop conditions, and profiling. |
 | `backend/llm.js` | LangChain.js prompt chains and validated structured model outputs. |
 | `backend/tools.js`, `backend/calculator.js` | JavaScript tool adapters and safe arithmetic parser. |
-| `backend/finance/server.py` | Python MCP server exposing yfinance search, history, and quotes. |
+| `backend/finance/server.py`, `backend/finance/package_tools.py` | Python MCP server exposing 18 bounded yfinance tools. |
 | `backend/finance/client.js`, `backend/finance/cli.js` | Node MCP client and standalone command-line client. |
 | `backend/memory.js` | Structured context and SQLite semantic recall. |
 | `backend/tests/` | Node unit and API integration tests. |
 | `frontend/src/` | React chat, CSS, and component tests. |
 | `frontend/vite.config.js` | Development proxy, React build, and test configuration. |
 
-The previous Python implementation (`*.py`, `agent/`, `tools/`, `templates/`, and `static/`) remains as a migration reference. It is not used by `npm run dev` or `npm start`.
+The superseded Python chat application and Flask UI have been removed; their source remains in Git history. Python is still required for the finance MCP server and trading framework. Install their dependencies from `backend/finance/requirements.txt` and `pyproject.toml` as shown above. See the [cleanup decisions](docs/REPOSITORY_CLEANUP.md) for what is kept, removed, and deferred.
 
 ## Finance Workspace
 
@@ -181,6 +181,7 @@ Ollama must support structured JSON output. Stock quotes and comparisons use the
 ```bash
 npm test
 npm run build
+.venv/bin/python -m unittest discover -s trading_agent/tests -v
 ```
 
-Install the finance Python requirements before testing. Tests mock models and external services, including a real MCP stdio connection to a Python server with fake Yahoo data, so they do not require Ollama or network access. They cover tool behavior, memory persistence and session isolation, stock plans and follow-ups, API validation, and React interaction. See [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md), and [ROADMAP.md](ROADMAP.md) for contributor guidance and planned work.
+Install the finance Python requirements and `.[mcp]` package before testing, as shown in Quick Start. Tests mock models and external services, including a real MCP stdio connection to a Python server with fake Yahoo data, so they do not require Ollama or network access. They cover tool behavior, memory persistence and session isolation, stock plans and follow-ups, API validation, and React interaction. See [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md), and [ROADMAP.md](ROADMAP.md) for contributor guidance and planned work.

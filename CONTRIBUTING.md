@@ -4,9 +4,9 @@ Use the [agent-assisted GitHub delivery workflow](docs/AGENT_WORKFLOW.md) for is
 
 ## Development Workflow
 
-1. Install Node.js 22.13+ (24 LTS recommended), install Python 3.11+, run `npm ci`, create `.venv`, install `backend/finance/requirements.txt`, and copy `.env.example` to `.env`.
+1. Install Node.js 22.13+ (24 LTS recommended), install Python 3.11+, run `npm ci`, create `.venv`, install `backend/finance/requirements.txt` and the editable `.[mcp]` package, and copy `.env.example` to `.env`.
 2. Start local Ollama and pull the configured model. Run `npm run dev` to start Express on port 2610 and React on port 2611.
-3. Make focused changes in `backend/` or `frontend/src/`. The active application is JavaScript; `backend/finance/server.py` is the Python finance MCP server. Older root-level Python files remain migration references.
+3. Make focused application changes in `backend/` or `frontend/src/`. Python remains active in the finance MCP server, `trading_agent/`, examples and deployment scripts. The superseded Python chat application is available in Git history; see [cleanup decisions](docs/REPOSITORY_CLEANUP.md).
 4. Add tests for new behavior or bug fixes. Run `npm test` and `npm run build` before submitting changes. Tests use mocked models and services.
 5. Update README when setup, configuration, API fields, or behavior changes. Reference `ROADMAP.md` when proposing larger features.
 
