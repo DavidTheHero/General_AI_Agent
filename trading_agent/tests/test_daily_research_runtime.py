@@ -70,8 +70,10 @@ class DailyResearchRuntimeTests(unittest.TestCase):
         output.mkdir()
         snapshot = b'{"status":"running","attempts":[{"status":"complete"}]}'
         (output / "daily-study.json").write_bytes(snapshot)
+        monitor = self.manager.threads[-1]
         self.manager.stop(job["id"])
-        self.manager.threads[-1].join(2)
+        monitor.join(2)
+        self.assertFalse(monitor.is_alive())
         stopped = self.manager.daily_research(job["id"])
         self.assertEqual(stopped["status"], "stopped")
         self.assertEqual(stopped["daily_research"]["status"], "stopped")
@@ -84,8 +86,10 @@ class DailyResearchRuntimeTests(unittest.TestCase):
         snapshot = b'{"status":"running","assessment":"inconclusive","attempts":[]}'
         (output / "daily-study.json").write_bytes(snapshot)
         (output / "summary.json").write_bytes(snapshot)
+        monitor = self.manager.threads[-1]
         self.manager.stop(job["id"])
-        self.manager.threads[-1].join(2)
+        monitor.join(2)
+        self.assertFalse(monitor.is_alive())
         self.manager.db.execute("UPDATE jobs SET status='running' WHERE id=?", (job["id"],))
         self.manager.db.commit()
         self.manager.close()

@@ -46,8 +46,10 @@ class ResearchRuntimeTests(unittest.TestCase):
         experiment = {"dataset_id": "a" * 64, "config": {"symbols": ["DEMO_A"], "interval": "30m"},
                       "candidates": [{"kind": "trend_following"}], "train_sessions": 2, "validation_sessions": 1, "final_sessions": 2}
         job = self.manager.start({"mode": "experiment", "experiment": experiment})
+        monitor = self.manager.threads[-1]
         stopped = self.manager.stop(job["id"])
-        self.manager.threads[-1].join(2)
+        monitor.join(2)
+        self.assertFalse(monitor.is_alive())
         self.assertIn(stopped["status"], {"stopping", "stopped"})
         self.assertEqual(self.manager.get(job["id"])["status"], "stopped")
         self.assertIn("before a final report", self.manager.get(job["id"])["error"])
