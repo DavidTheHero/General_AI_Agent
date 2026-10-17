@@ -6,6 +6,8 @@ A Node.js backend and React chat frontend powered by LangChain.js and local Olla
 
 Requirements: Node.js **22.13+** (24 LTS recommended), npm, and a running [Ollama](https://ollama.com/) server. Finance tools also require Python **3.11+** for the local `yfinance` MCP server.
 
+macOS / Linux:
+
 ```bash
 npm ci
 python3 -m venv .venv
@@ -15,6 +17,24 @@ cp .env.example .env
 ollama pull llama3.1:8b-instruct-q4_K_M
 npm run dev
 ```
+
+Windows PowerShell (Node 24 and Python 3.12 were used for verification):
+
+```powershell
+node --version
+py -3.12 --version
+npm ci
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r backend/finance/requirements.txt
+.\.venv\Scripts\python.exe -m pip install -e '.[mcp]'
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+ollama pull llama3.1:8b-instruct-q4_K_M
+npm run dev
+```
+
+Use an installed Python 3.11+ executable instead of `py -3.12` if the Windows Python launcher is unavailable. Check versions in the terminal you will use: an older `node` or `python` earlier on PATH does not satisfy the requirements. No virtual-environment activation or execution-policy change is needed. If you already have `.venv`, verify its interpreter and packages instead of recreating it. Some environments provisioned with uv lack pip; use your existing package manager or bootstrap pip with that environment's `python -m ensurepip --upgrade` before using the pip commands.
+
+Start `npm run trading:runtime` in another terminal for the Trading desk. See [Windows foreground deployment and shutdown](deploy/README.md#windows-foreground-operation), the [initial platform verification record](docs/WINDOWS_REVIEW.md), and the [independent follow-up](docs/PEER_WINDOWS_REVIEW.md#lead-follow-up-win-02-f1-correction-and-independent-verification). Fresh Windows dependency installation in paths containing spaces and the final Windows checks passed in the follow-up; macOS execution remains unverified. These results describe the local Windows implementation, not a merged release.
 
 Start Ollama separately with `ollama serve` if it is not already running. Open **http://localhost:2611**. Express runs on port 2610; Vite proxies the React frontend's API requests to it. Only the backend talks to Ollama and external tool services.
 
@@ -169,7 +189,7 @@ Copy `.env.example` to `.env`. Backend scripts load it automatically; Vite reads
 | `OLLAMA_HOST` | `http://localhost:11434` | Local Ollama server. |
 | `OLLAMA_MODEL` | `llama3.1:8b-instruct-q4_K_M` | Downloaded Ollama model name. |
 | `SEMANTIC_DB_PATH` | `semantic_memory.db` | SQLite conversation store. |
-| `MCP_PYTHON` | Repository `.venv` Python, otherwise `python3` | Override the MCP server interpreter. |
+| `MCP_PYTHON` | Repository `.venv/Scripts/python.exe` on Windows or `.venv/bin/python` on POSIX; otherwise `python` / `python3` respectively | Override the finance/trading interpreter with an executable path only, without arguments. Paths containing spaces are supported. |
 | `AGENT_API_URL` | `http://localhost:2610` | Vite API proxy target, without `/query`. |
 | `TRADING_RUNTIME_PORT` | `2612` | Local execution-service port; use the same value for Node/MCP/runtime. |
 | `TRADING_DATA_DIR` | Absolute repository `artifacts/trading/runtime` | Shared job database, local token, logs and report directory. |

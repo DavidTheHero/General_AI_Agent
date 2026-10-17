@@ -77,8 +77,10 @@ class WeeklyResearchRuntimeTests(unittest.TestCase):
         snapshot = b'{"status":"running","attempts":[{"status":"complete"}]}'
         for name in ["daily-study.json", "summary.json"]:
             (output / name).write_bytes(snapshot)
+        monitor = self.manager.threads[-1]
         self.manager.stop(job["id"])
-        self.manager.threads[-1].join(2)
+        monitor.join(2)
+        self.assertFalse(monitor.is_alive())
         stopped = self.manager.weekly_research(job["id"])
         self.assertEqual(stopped["status"], "stopped")
         self.assertEqual(stopped["daily_research"]["status"], "stopped")
@@ -111,8 +113,10 @@ class WeeklyResearchRuntimeTests(unittest.TestCase):
         jobs = {}
         for mode in ["weekly", "sector", "daily"]:
             jobs[mode] = call(f"/{mode}-research", {})
+            monitor = self.manager.threads[-1]
             self.manager.stop(jobs[mode]["id"])
-            self.manager.threads[-1].join(2)
+            monitor.join(2)
+            self.assertFalse(monitor.is_alive())
         for mode in jobs:
             self.assertEqual([job["id"] for job in call(f"/{mode}-research")["jobs"]], [jobs[mode]["id"]])
             for requested in jobs:

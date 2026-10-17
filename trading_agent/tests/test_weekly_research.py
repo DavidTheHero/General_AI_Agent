@@ -3,6 +3,7 @@ from copy import deepcopy
 import json
 from pathlib import Path
 import sqlite3
+from contextlib import closing
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -147,7 +148,7 @@ class WeeklyResearchTests(unittest.TestCase):
         self.assertEqual(json.loads((self.output / "progress.json").read_text())["attempts_planned"], 31)
         declaration = json.loads((directory / "preregistered.json").read_text())
         self.assertEqual(declaration["declaration_sha256"], checksum(directory / "declared-protocol.md"))
-        with sqlite3.connect(self.root / "daily-studies.sqlite") as database:
+        with closing(sqlite3.connect(self.root / "daily-studies.sqlite")) as database, database:
             status, snapshot = database.execute("SELECT status,protocol FROM studies WHERE id=?", (result["experiment_id"],)).fetchone()
         self.assertEqual(status, "complete")
         self.assertEqual(json.loads(snapshot), result)
@@ -252,7 +253,7 @@ class WeeklyResearchTests(unittest.TestCase):
 
     def test_known_local_search_lineage_beyond_fourteen_is_retained(self):
         self.root.mkdir()
-        with sqlite3.connect(self.root / "daily-studies.sqlite") as database:
+        with closing(sqlite3.connect(self.root / "daily-studies.sqlite")) as database, database:
             database.execute("CREATE TABLE studies (id TEXT PRIMARY KEY, protocol TEXT, status TEXT)")
             prior = {"protocol_id": "prior-hypothesis", "candidate_grid": [{"configuration": number} for number in range(15)]}
             database.execute("INSERT INTO studies VALUES (?,?,?)", (uuid4().hex, json.dumps(prior), "failed"))
@@ -290,7 +291,7 @@ class WeeklyResearchTests(unittest.TestCase):
     def test_report_renders_actual_attempt_artifacts_without_promoting_sensitivity_winner(self):
         result, _ = self.run_study()
         write_weekly_report(result, self.root / "daily-studies" / result["experiment_id"], self.output)
-        report = (self.output / "report.md").read_text()
+        report = (self.output / "report.md").read_text(encoding="utf-8")
         self.assertIn("**rejects_alpha_claim**", report)
         self.assertIn("**research_only**", report)
         self.assertIn("Reserved 2023–2025 historical price paths were not requested", report)

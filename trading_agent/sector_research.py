@@ -6,10 +6,7 @@ import json
 import os
 from pathlib import Path
 import re
-import signal
 import sqlite3
-import sys
-import threading
 from typing import Literal
 
 from pydantic import Field, model_validator
@@ -191,8 +188,10 @@ def run_sector_research(spec, root, output, experiment_id, *, ticker_factory=yf.
                 item.update(status=record["status"], error=str(error) or type(error).__name__, artifact_available=False)
                 event("terminated", item)
     finally:
-        save()
-        database.close()
+        try:
+            save()
+        finally:
+            database.close()
     return record
 
 
@@ -203,16 +202,9 @@ def main(argv=None):
     parser.add_argument("--experiment-id", required=True)
     parser.add_argument("--runtime-worker", action="store_true")
     args = parser.parse_args(argv)
-    def interrupt(*_args):
-        raise KeyboardInterrupt()
-    signal.signal(signal.SIGTERM, interrupt)
-    if args.runtime_worker:
-        def lifetime():
-            while os.read(sys.stdin.fileno(), 1):
-                pass
-            os.kill(os.getpid(), signal.SIGTERM)
-        threading.Thread(target=lifetime, daemon=True).start()
-    spec = SectorResearchSpec.model_validate(json.loads(args.request.read_text())["sector_research"])
+    from .worker_control import install_worker_control
+    install_worker_control(args.runtime_worker)
+    spec = SectorResearchSpec.model_validate(json.loads(args.request.read_text(encoding="utf-8"))["sector_research"])
     record = run_sector_research(spec, args.root, args.output, args.experiment_id)
     print(canonical({key: record[key] for key in ["experiment_id", "status", "assessment", "metrics", "errors"]}))
     return 0 if record["status"] == "complete" else 2

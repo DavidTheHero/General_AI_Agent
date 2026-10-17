@@ -22,6 +22,8 @@ Use concise commit subjects and small, reviewable changes. Discuss major archite
 
 ## Python Simulation Development
 
+Windows uses `.\.venv\Scripts\python.exe` wherever the commands below use `.venv/bin/python`. See [PowerShell setup](README.md#quick-start). Run `npm test`, `npm run build`, `.\.venv\Scripts\python.exe -m unittest discover -s trading_agent/tests -v`, and `.\.venv\Scripts\python.exe -m trading_agent demo` before submitting Windows changes. The platform CI matrix runs Node 24 / Python 3.12 on Windows and macOS; adding the workflow does not establish a passing macOS result until it actually runs.
+
 Install the trading framework with `.venv/bin/python -m pip install -e .`. Keep its data adapters, policies, execution/accounting and reporting in the separate modules under `trading_agent/`; examples live in `examples/`. Add meaningful tests in `trading_agent/tests/` and run `.venv/bin/python -m unittest discover -s trading_agent/tests -v`. Check a full-session demo and report artifacts when changing metrics or charts. Generated reports under `artifacts/trading/` and editable-install metadata are ignored. Never introduce future-bar access, implicit price filling, mixed-currency valuation or same-bar signal fills.
 
 The trading MCP facade and durable runtime are integrated with chat and `TradingDashboard.jsx`. Run `npm run trading:runtime` separately. Test job lifecycle, cancellation, disconnected clients, progress polling, artifact boundaries and restart interruption when editing this integration. `deploy/install_service.py` can print service definitions without installing them.

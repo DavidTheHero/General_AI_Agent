@@ -5,15 +5,13 @@ import json
 import logging
 from pathlib import Path
 import sys
-import signal
-import os
-import threading
 from uuid import uuid4
 
 from .calendar import MarketCalendar
 from .config import load_config
 from .data import SyntheticFeed
 from .runner import run_backtest, run_watch
+from .worker_control import install_worker_control
 
 
 def main(argv=None):
@@ -29,15 +27,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.continuous and args.mode != "watch":
         parser.error("--continuous applies only to watch")
-    def interrupt(_signal, _frame):
-        raise KeyboardInterrupt()
-    signal.signal(signal.SIGTERM, interrupt)
-    if args.runtime_worker:
-        def parent_lifetime():
-            while os.read(sys.stdin.fileno(), 1):
-                pass
-            os.kill(os.getpid(), signal.SIGTERM)
-        threading.Thread(target=parent_lifetime, daemon=True).start()
+    controller = install_worker_control(args.runtime_worker)
     logger = logging.getLogger("trading_agent")
     if not logger.handlers:
         handler = logging.StreamHandler()
@@ -56,7 +46,7 @@ def main(argv=None):
         if args.mode == "watch":
             if args.start or args.end:
                 raise ValueError("watch uses upcoming market sessions; date ranges belong to backtest")
-            record = run_watch(config, output, session_count=None if args.continuous else args.sessions, calendar=calendar)
+            record = run_watch(config, output, session_count=None if args.continuous else args.sessions, calendar=calendar, sleep=controller.sleep)
         else:
             if args.sessions != 1:
                 raise ValueError("--sessions applies only to watch; use date ranges for backtest/demo")

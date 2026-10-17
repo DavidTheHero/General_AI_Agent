@@ -65,8 +65,10 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(self.manager.artifact(job["id"], "report.html").read_text(), "<h1>Simulation</h1>")
         for bad in ["../../token", "config.json", "worker.log"]:
             with self.assertRaises(KeyError): self.manager.artifact(job["id"], bad)
+        monitor = self.manager.threads[-1]
         self.manager.stop(job["id"])
-        self.manager.threads[-1].join(2)
+        monitor.join(2)
+        self.assertFalse(monitor.is_alive())
         self.assertEqual(worker.signal, signal.SIGTERM)
         self.assertEqual(self.manager.get(job["id"])["status"], "stopped")
         self.assertEqual(len(self.manager.list()["jobs"]), 1)
