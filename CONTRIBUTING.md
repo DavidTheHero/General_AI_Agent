@@ -4,9 +4,9 @@ Use the [agent-assisted GitHub delivery workflow](docs/AGENT_WORKFLOW.md) for is
 
 ## Development Workflow
 
-1. Install Node.js 22.13+ (24 LTS recommended), install Python 3.11+, run `npm ci`, create `.venv`, install `backend/finance/requirements.txt`, and copy `.env.example` to `.env`.
+1. Install Node.js 22.13+ (24 LTS recommended), install Python 3.11+, run `npm ci`, create `.venv`, install `backend/finance/requirements.txt` and the editable `.[mcp]` package, and copy `.env.example` to `.env`.
 2. Start local Ollama and pull the configured model. Run `npm run dev` to start Express on port 2610 and React on port 2611.
-3. Make focused changes in `backend/` or `frontend/src/`. The active application is JavaScript; `backend/finance/server.py` is the Python finance MCP server. Older root-level Python files remain migration references.
+3. Make focused application changes in `backend/` or `frontend/src/`. Python remains active in the finance MCP server, `trading_agent/`, examples and deployment scripts. The superseded Python chat application is available in Git history; see [cleanup decisions](docs/REPOSITORY_CLEANUP.md).
 4. Add tests for new behavior or bug fixes. Run `npm test` and `npm run build` before submitting changes. Tests use mocked models and services.
 5. Update README when setup, configuration, API fields, or behavior changes. Reference `ROADMAP.md` when proposing larger features.
 
@@ -22,7 +22,7 @@ Use concise commit subjects and small, reviewable changes. Discuss major archite
 
 ## Python Simulation Development
 
-Windows uses `.\.venv\Scripts\python.exe` wherever the commands below use `.venv/bin/python`. See [PowerShell setup](README.md#quick-start). Run `npm test`, `npm run build`, `.\.venv\Scripts\python.exe -m unittest discover -s trading_agent/tests -v`, and `.\.venv\Scripts\python.exe -m trading_agent demo` before submitting Windows changes. The platform CI matrix runs Node 24 / Python 3.12 on Windows and macOS; adding the workflow does not establish a passing macOS result until it actually runs.
+Windows uses `.\.venv\Scripts\python.exe` wherever the commands below use `.venv/bin/python`. See [PowerShell setup](README.md#quick-start). Run `npm test`, `npm run build`, `.\.venv\Scripts\python.exe -m unittest discover -s trading_agent/tests -v`, and `.\.venv\Scripts\python.exe -m trading_agent demo` before submitting Windows changes. The platform CI matrix runs Node 24 / Python 3.12 on Windows and macOS, plus Node 22.13 / Python 3.11 on Linux. See [PR #9](https://github.com/DavidTheHero/General_AI_Agent/pull/9) for executed results; each PR must pass its own required checks.
 
 Install the trading framework with `.venv/bin/python -m pip install -e .`. Keep its data adapters, policies, execution/accounting and reporting in the separate modules under `trading_agent/`; examples live in `examples/`. Add meaningful tests in `trading_agent/tests/` and run `.venv/bin/python -m unittest discover -s trading_agent/tests -v`. Check a full-session demo and report artifacts when changing metrics or charts. Generated reports under `artifacts/trading/` and editable-install metadata are ignored. Never introduce future-bar access, implicit price filling, mixed-currency valuation or same-bar signal fills.
 

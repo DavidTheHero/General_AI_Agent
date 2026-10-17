@@ -34,7 +34,7 @@ npm run dev
 
 Use an installed Python 3.11+ executable instead of `py -3.12` if the Windows Python launcher is unavailable. Check versions in the terminal you will use: an older `node` or `python` earlier on PATH does not satisfy the requirements. No virtual-environment activation or execution-policy change is needed. If you already have `.venv`, verify its interpreter and packages instead of recreating it. Some environments provisioned with uv lack pip; use your existing package manager or bootstrap pip with that environment's `python -m ensurepip --upgrade` before using the pip commands.
 
-Start `npm run trading:runtime` in another terminal for the Trading desk. See [Windows foreground deployment and shutdown](deploy/README.md#windows-foreground-operation), the [initial platform verification record](docs/WINDOWS_REVIEW.md), and the [independent follow-up](docs/PEER_WINDOWS_REVIEW.md#lead-follow-up-win-02-f1-correction-and-independent-verification). Fresh Windows dependency installation in paths containing spaces and the final Windows checks passed in the follow-up; macOS execution remains unverified. These results describe the local Windows implementation, not a merged release.
+Start `npm run trading:runtime` in another terminal for the Trading desk. See [Windows foreground deployment and shutdown](deploy/README.md#windows-foreground-operation), the [initial platform verification record](docs/WINDOWS_REVIEW.md), and the [independent follow-up](docs/PEER_WINDOWS_REVIEW.md#lead-follow-up-win-02-f1-correction-and-independent-verification). Fresh Windows dependency installation in paths containing spaces and the final Windows checks passed in the follow-up. Current hosted Windows, macOS and minimum-version results and delivery status are recorded in [Windows delivery PR #9](https://github.com/DavidTheHero/General_AI_Agent/pull/9). Hosted application checks do not verify service installation.
 
 Start Ollama separately with `ollama serve` if it is not already running. Open **http://localhost:2611**. Express runs on port 2610; Vite proxies the React frontend's API requests to it. Only the backend talks to Ollama and external tool services.
 
@@ -92,22 +92,22 @@ Express serves both the built React UI and API at **http://localhost:2610**. The
 
 | Path | Purpose |
 | --- | --- |
-| `trading_agent/`, `examples/trading_*.json` | Python intraday agent, policies, portfolio metrics, reports, and configuration examples. |
+| `trading_agent/`, `examples/` | Python simulation and research framework, policies, accounting, reports, and examples. |
 | `trading_agent/runtime.py`, `trading_agent/mcp_server.py`, `backend/trading/` | Durable job service, trading MCP tools and Node integration. |
-| `frontend/src/TradingDashboard.jsx`, `deploy/` | Live simulation dashboard and macOS service setup. |
+| `frontend/src/TradingDashboard.jsx`, `deploy/` | Live simulation dashboard, macOS service setup and Windows foreground operation. |
 | `backend/server.js` | Server startup and shutdown. |
 | `backend/app.js` | Express routes, input validation, and static React serving. |
 | `backend/agent.js`, `backend/agent-loop.js` | Session context, model/tool loop, stop conditions, and profiling. |
 | `backend/llm.js` | LangChain.js prompt chains and validated structured model outputs. |
 | `backend/tools.js`, `backend/calculator.js` | JavaScript tool adapters and safe arithmetic parser. |
-| `backend/finance/server.py` | Python MCP server exposing yfinance search, history, and quotes. |
+| `backend/finance/server.py`, `backend/finance/package_tools.py` | Python MCP server exposing 18 bounded yfinance tools. |
 | `backend/finance/client.js`, `backend/finance/cli.js` | Node MCP client and standalone command-line client. |
 | `backend/memory.js` | Structured context and SQLite semantic recall. |
 | `backend/tests/` | Node unit and API integration tests. |
 | `frontend/src/` | React chat, CSS, and component tests. |
 | `frontend/vite.config.js` | Development proxy, React build, and test configuration. |
 
-The previous Python implementation (`*.py`, `agent/`, `tools/`, `templates/`, and `static/`) remains as a migration reference. It is not used by `npm run dev` or `npm start`.
+The superseded Python chat application and Flask UI have been removed; their source remains in Git history. Python is still required for the finance MCP server and trading framework. Install their dependencies from `backend/finance/requirements.txt` and `pyproject.toml` as shown above. See the [cleanup decisions](docs/REPOSITORY_CLEANUP.md) for what is kept, removed, and deferred.
 
 ## Finance Workspace
 
@@ -201,6 +201,7 @@ Ollama must support structured JSON output. Stock quotes and comparisons use the
 ```bash
 npm test
 npm run build
+.venv/bin/python -m unittest discover -s trading_agent/tests -v
 ```
 
-Install the finance Python requirements before testing. Tests mock models and external services, including a real MCP stdio connection to a Python server with fake Yahoo data, so they do not require Ollama or network access. They cover tool behavior, memory persistence and session isolation, stock plans and follow-ups, API validation, and React interaction. See [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md), and [ROADMAP.md](ROADMAP.md) for contributor guidance and planned work.
+Install the finance Python requirements and `.[mcp]` package before testing, as shown in Quick Start. Tests mock models and external services, including a real MCP stdio connection to a Python server with fake Yahoo data, so they do not require Ollama or network access. They cover tool behavior, memory persistence and session isolation, stock plans and follow-ups, API validation, and React interaction. See [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md), and [ROADMAP.md](ROADMAP.md) for contributor guidance and planned work.
