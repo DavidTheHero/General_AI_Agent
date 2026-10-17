@@ -8,7 +8,7 @@ The supported application is Express + React + LangChain.js with local Ollama. P
 | --- | --- |
 | `backend/`, `frontend/` | Active server, agent/tool loop, finance integration, UI and tests, reached by the npm scripts. |
 | `trading_agent/`, `examples/` | Active Python simulations, durable workers, research protocols and executable examples. |
-| `deploy/` | Existing macOS service installation and operating instructions. |
+| `deploy/` | Existing macOS service installation and macOS/Linux/Windows operating instructions. |
 | `package.json`, `package-lock.json` | JavaScript dependency declarations and reproducible installation. |
 | `pyproject.toml`, `trading_agent/requirements.txt`, `backend/finance/requirements.txt` | Active Python package and dependency sources; finance and trading are separate installation targets. |
 | `.github/`, `scripts/`, contributor guides | Issue/PR delivery rules and their validation, plus application CI. |

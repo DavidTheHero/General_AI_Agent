@@ -136,8 +136,8 @@ The earlier finance release plan is implemented, rather than the next release. C
 - Express/React chat with LangChain.js, local Ollama, validated tool arguments, bounded tool execution, session context and SQLite semantic recall.
 - Finance MCP data families: search, prices/history, FX, fundamentals, statements, actions, estimates, holders, funds, options, calendars, markets, sectors, screening and bounded streaming.
 - Seven Finance workspace reports: company research, company comparison, earnings, ETF overlap, explained screening, portfolio currency attribution and on-demand market brief. Calculations remain deterministic; reports disclose dates, sources and partial data.
-- Independent trading workers, durable job records, MCP control, dashboard polling and macOS launchd setup. Interrupted intraday portfolios still require review; automatic recovery is deferred.
-- Offline Node/React/Python tests and Linux application CI. Passing local checks do not establish Windows/macOS CI results or an economic edge.
+- Independent trading workers, durable job records, MCP control, dashboard polling, macOS launchd setup and Windows foreground operation. Interrupted intraday portfolios still require review; automatic recovery is deferred.
+- Offline Node/React/Python tests, Linux application CI, and Windows/macOS/minimum-version platform CI. Published platform results are recorded in [PR #9](https://github.com/DavidTheHero/General_AI_Agent/pull/9); passing software checks do not establish an economic edge.
 
 ### Deferred, without a delivery commitment
 
