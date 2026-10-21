@@ -1,3 +1,6 @@
+import { ChatOpenAI } from "@langchain/openai";
+import { SystemMessage } from "@langchain/core/messages";
+import { modelSettings } from "./model-provider.js";
 import { ChatOllama } from "@langchain/ollama";
 import { ChatPromptTemplate } from "@langchain/core/prompts";
 import { z } from "zod";
@@ -79,15 +82,24 @@ export const followupSchema = z.object({ refers_to_stock_comparison: z.enum(["Ye
 export const financePlanSchema = z.object({ name: z.enum(packageTools), arguments: z.record(z.string(), z.unknown()) });
 export const workspacePlanSchema = z.object({ request: workspaceRequest.nullable(), clarification: z.string() });
 
-export const getModelName = () => process.env.OLLAMA_MODEL || "llama3.1:8b-instruct-q4_K_M";
+const outputModes = new WeakMap();
+export const getModelName = (env = process.env) => modelSettings(env).model;
 
-export function createModel() {
-    return new ChatOllama({
-        model: getModelName(),
-        baseUrl: process.env.OLLAMA_HOST || "http://localhost:11434",
-        temperature: 0,
-        numCtx: 16384,
+export function createModel({ env = process.env } = {}) {
+    const settings = modelSettings(env);
+    if (settings.provider === "ollama") return new ChatOllama({
+        model: settings.model, baseUrl: settings.baseURL, temperature: 0, numCtx: 16384,
     });
+    const model = new ChatOpenAI({
+        model: settings.model,
+        configuration: { baseURL: settings.baseURL },
+        apiKey: settings.apiKey,
+        temperature: 0, maxTokens: 4096, timeout: 120000, maxRetries: 1,
+        useResponsesApi: false,
+        ...(settings.disableThinking ? { modelKwargs: { chat_template_kwargs: { enable_thinking: false } } } : {}),
+    });
+    outputModes.set(model, settings.structuredOutput);
+    return model;
 }
 
 export function createChains(model = createModel()) {
@@ -97,6 +109,21 @@ export function createChains(model = createModel()) {
         ]);
         // Workspace input normalization contains transforms; expose its input JSON schema.
         const output = schema === workspacePlanSchema ? z.toJSONSchema(schema, { io: "input" }) : schema;
+        if (model instanceof ChatOpenAI) {
+            // vLLM rejects Zod's redundant propertyNames: { type: "string" } for records.
+            // JSON object keys are already strings; retain any actual key constraints.
+            const jsonSchema = JSON.parse(JSON.stringify(schema === workspacePlanSchema ? output : z.toJSONSchema(schema), (key, value) =>
+                key === "propertyNames" && value?.type === "string" && Object.keys(value).length === 1 ? undefined : value));
+            // Use response schemas instead of requiring a server-side tool-call parser.
+            // Validate locally as well, including defaults and workspace transforms.
+            const jsonMode = outputModes.get(model) === 'json_object';
+            const modelPrompt = jsonMode ? ChatPromptTemplate.fromMessages([
+                new SystemMessage(instructions + '\nReturn only a JSON object matching this schema: ' + JSON.stringify(jsonSchema)),
+                ['human', template],
+            ]) : prompt;
+            return modelPrompt.pipe(model.withStructuredOutput(jsonSchema, jsonMode ? { method: 'jsonMode' } : { method: "jsonSchema", strict: false }))
+                .pipe((result) => schema.parse(result));
+        }
         return prompt.pipe(model.withStructuredOutput(output));
     }
     return {

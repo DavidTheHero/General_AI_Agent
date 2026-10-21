@@ -6,6 +6,20 @@ import { selectServices, runServices } from '../../scripts/up.mjs';
 const reachable = async () => ({ ok: true, json: async () => ({ models: [] }) });
 const unreachable = async () => { throw new Error('connection refused'); };
 
+test('Docker startup checks the selected server model and never starts Ollama', async () => {
+    const env = { LLM_PROVIDER: 'openai-compatible', LLM_BASE_URL: 'http://mac:18035/v1', LLM_MODEL: 'mac-model', LLM_API_KEY: 'test-key' };
+    let requested;
+    const services = await selectServices(env, async (url, options) => {
+        requested = { url: String(url), authorization: options.headers.Authorization };
+        return { ok: true, json: async () => ({ data: [{ id: 'mac-model' }] }) };
+    });
+    assert.deepEqual(services.map(s => s.name), ['api', 'ui', 'trading']);
+    assert.deepEqual(requested, { url: 'http://mac:18035/v1/models', authorization: 'Bearer test-key' });
+    await assert.rejects(selectServices(env, async () => ({ ok: true, json: async () => ({ data: [{ id: 'other-model' }] }) })), /mac-model.*other-model/);
+    await assert.rejects(selectServices(env, unreachable), /configured model server/);
+    await assert.rejects(selectServices(env, async () => ({ ok: false, status: 401 })), /401/);
+});
+
 test('one-command startup reuses a running Ollama server', async () => {
     const services = await selectServices({}, reachable);
     assert.deepEqual(services.map(s => s.name), ['api', 'ui', 'trading']);

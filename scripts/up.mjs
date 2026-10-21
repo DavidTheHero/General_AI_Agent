@@ -1,16 +1,35 @@
 import { spawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { pythonCommand } from '../backend/finance/client.js';
+import { modelSettings } from '../backend/model-provider.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 
 export async function selectServices(env = process.env, fetchImpl = fetch) {
+    const settings = modelSettings(env);
     const services = [
         { name: 'api', command: process.execPath, args: ['backend/server.js'] },
         { name: 'ui', command: process.execPath, args: ['node_modules/vite/bin/vite.js', '--config', 'frontend/vite.config.js'] },
         { name: 'trading', command: pythonCommand({ env }), args: ['-m', 'trading_agent.runtime', '--parent-pipe'], parentPipe: true },
     ];
-    const host = new URL(env.OLLAMA_HOST || 'http://localhost:11434');
+    if (settings.provider !== 'ollama') {
+        let response;
+        try {
+            response = await fetchImpl(`${settings.baseURL}/models`, {
+                headers: { Authorization: `Bearer ${settings.apiKey}` }, signal: AbortSignal.timeout(5000),
+            });
+        } catch {
+            throw new Error('Cannot reach the configured model server. Check LLM_BASE_URL (or VLLM_BASE_URL), Docker and network access.');
+        }
+        if (!response.ok) throw new Error(`Model discovery returned HTTP ${response.status}. Check the base URL (including /v1) and API key.`);
+        const models = (await response.json()).data;
+        if (!Array.isArray(models)) throw new Error('Model server did not return an OpenAI-compatible model list.');
+        if (!models.some(model => model.id === settings.model)) {
+            throw new Error(`Configured model ${settings.model} is unavailable. Available models: ${models.map(model => model.id).join(', ') || '(none)'}`);
+        }
+        return services;
+    }
+    const host = new URL(settings.baseURL);
     let response;
     try {
         response = await fetchImpl(new URL('/api/tags', host), { signal: AbortSignal.timeout(2000) });
