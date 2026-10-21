@@ -36,7 +36,7 @@ History uses brief subjects such as `re-organising` and `v1.0`; no formal commit
 
 ## Security & Configuration
 
-Configure `OLLAMA_HOST`, `OLLAMA_MODEL`, `PORT`, and `SEMANTIC_DB_PATH` through `.env`. `AGENT_API_URL` sets the Vite development proxy target. Keep secrets, `.env`, `node_modules/`, build outputs, and generated databases out of commits.
+Configure `LLM_PROVIDER`, `PORT`, and `SEMANTIC_DB_PATH` through `.env`. Ollama uses `OLLAMA_HOST`/`OLLAMA_MODEL`; OpenAI-compatible servers use `LLM_BASE_URL`/`LLM_MODEL`/`LLM_API_KEY`. `LLM_STRUCTURED_OUTPUT=json_object` supports servers that reject complex schemas while retaining local validation. `AGENT_API_URL` sets the Vite development proxy target. Keep secrets, `.env`, `node_modules/`, build outputs, and generated databases out of commits.
 
 ## Python Trading Framework
 

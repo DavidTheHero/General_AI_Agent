@@ -1,6 +1,6 @@
 # Assistant Agent
 
-A Node.js backend and React chat frontend powered by LangChain.js and local Ollama. The assistant routes questions to weather, finance, news, facts, arithmetic, time, holidays, and fun tools. Chat uses a bounded agent loop with tool observations and an action trace. Structured context and SQLite semantic recall support follow-up questions.
+A Node.js backend and React chat frontend powered by LangChain.js with Ollama or an OpenAI-compatible model server. The assistant routes questions to weather, finance, news, facts, arithmetic, time, holidays, and fun tools. Chat uses a bounded agent loop with tool observations and an action trace. Structured context and SQLite semantic recall support follow-up questions.
 
 ## Quick Start
 
@@ -10,9 +10,9 @@ After the one-time setup below, start the complete app from the repository folde
 npm run up
 ```
 
-Open **http://localhost:2611** for chat and the Trading desk. This command starts the API, frontend and Trading runtime, reuses a reachable Ollama server, or starts `ollama serve` when the configured local server is unavailable. Keep the terminal open; **Ctrl+C** stops the services it started and allows the Trading runtime to close its jobs. An existing Ollama server is left running. If a service exits, the other owned services stop too. Services share this terminal's output.
+Open **http://localhost:2611** for chat and the Trading desk. This command starts the API, frontend and Trading runtime. With Ollama it reuses a reachable server or starts `ollama serve` locally. With an OpenAI-compatible provider it checks the configured server and exact model ID first; it does not start Ollama. Keep the terminal open; **Ctrl+C** stops the services it started and allows the Trading runtime to close its jobs. An existing model server is left running. If a service exits, the other owned services stop too. Services share this terminal's output.
 
-Requirements for one-time setup: Node.js **22.13+** (24 LTS recommended), npm, and [Ollama](https://ollama.com/) installed locally or running on the configured remote host. Finance and Trading tools require Python **3.11+**. Dependency installation and model downloads are not repeated by `npm run up`.
+Requirements for one-time setup: Node.js **22.13+** (24 LTS recommended), npm, and either [Ollama](https://ollama.com/) or a reachable OpenAI-compatible server. Skip `ollama pull` below when using Docker servers. Finance and Trading tools require Python **3.11+**. Dependency installation and model downloads are not repeated by `npm run up`.
 
 macOS / Linux:
 
@@ -52,6 +52,27 @@ For API hot reload, `npm run dev` keeps its existing API/frontend-only behavior;
 npm run dev:backend
 npm run dev:frontend
 ```
+
+## Connect a Docker model on either computer
+
+Set these values in the local `.env`, then restart `npm run up`:
+
+```dotenv
+LLM_PROVIDER=openai-compatible
+LLM_BASE_URL=http://MAC_LAN_IP:18035/v1
+LLM_MODEL=docker.io/local/qwen35-9b:16k
+LLM_API_KEY=local-no-key
+LLM_STRUCTURED_OUTPUT=json_object
+LLM_DISABLE_THINKING=true
+```
+
+Use the Mac's reachable LAN address, published Docker port and the **exact** model ID returned by `GET <LLM_BASE_URL>/models`. `localhost` addresses the computer running this app. The placeholder key is for an unauthenticated server; otherwise use its actual key. Keep keys in `.env`.
+
+For the desktop vLLM server, use `LLM_BASE_URL=http://127.0.0.1:18020/v1`, `LLM_MODEL=qwen3.8-27b` and `LLM_STRUCTURED_OUTPUT=json_schema`. The `vllm` provider also accepts the existing `VLLM_BASE_URL`, `VLLM_MODEL` and `VLLM_API_KEY` aliases. Ollama remains the default provider with its existing environment variables.
+
+Servers must support Chat Completions and either JSON-schema or JSON-object responses. `json_schema` constrains responses on the server. Some Docker Model Runner/llama.cpp servers reject complex schemas: `json_object` supplies the schema in the prompt instead. Both modes validate responses locally, including tool choices, defaults and workspace normalization. Invalid responses are rejected without switching providers. Set `LLM_DISABLE_THINKING=true` only for Qwen servers supporting that option; leave it false for other servers. Calls have a 120-second timeout and one transport retry. Responses identify the configured model. Python trading strategies of kind `ollama` retain their separate Ollama settings.
+
+This uses [LangChain's OpenAI-compatible Chat Completions integration](https://docs.langchain.com/oss/javascript/integrations/chat/openai). Self-hosted servers do not require an OpenAI account; other API protocols need their own adapter.
 
 ## Python Intraday Trading Framework
 
