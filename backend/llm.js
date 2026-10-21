@@ -79,9 +79,11 @@ export const followupSchema = z.object({ refers_to_stock_comparison: z.enum(["Ye
 export const financePlanSchema = z.object({ name: z.enum(packageTools), arguments: z.record(z.string(), z.unknown()) });
 export const workspacePlanSchema = z.object({ request: workspaceRequest.nullable(), clarification: z.string() });
 
+export const getModelName = () => process.env.OLLAMA_MODEL || "llama3.1:8b-instruct-q4_K_M";
+
 export function createModel() {
     return new ChatOllama({
-        model: process.env.OLLAMA_MODEL || "llama3.1:8b-instruct-q4_K_M",
+        model: getModelName(),
         baseUrl: process.env.OLLAMA_HOST || "http://localhost:11434",
         temperature: 0,
         numCtx: 16384,
