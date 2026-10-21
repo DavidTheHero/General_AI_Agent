@@ -1,4 +1,5 @@
 import { createChains, routingSchema, answerSchema, followupSchema, financePlanSchema, workspacePlanSchema, toolCatalog, rewriteSchema, applicationToolSchema } from "./llm.js";
+import { getModelName } from "./llm.js";
 import { runAgentLoop, loopStepSchema } from "./agent-loop.js";
 import { companyRequest } from "./finance/resolve-company.js";
 import { workspaceRequest, tableRecords } from "./finance/workspace.js";
@@ -285,6 +286,7 @@ export function createAgent({ chains = createChains(), tools = createTools(), st
             answer: responses.map((item) => metadata.response_mode === "api" ? item.answer : `For "${item.query}": ${item.answer}`).join("\n\n"),
             responses, usage, token_usage: tokens, metadata: enriched,
             latency_ms: Math.round((performance.now() - started) * 100) / 100, timings,
+            model: getModelName(),
         };
     }
     return { run };

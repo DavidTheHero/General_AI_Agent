@@ -39,7 +39,7 @@ test("calculator routing preserves response shape, profiling and semantic memory
     assert.equal(result.metadata.session_id, "one");
     assert.ok(result.timings.lm_router);
     assert.ok(store.query("one", "numbers").length);
-    assert.deepEqual(Object.keys(result).sort(), ["answer", "responses", "usage", "token_usage", "metadata", "latency_ms", "timings"].sort());
+    assert.deepEqual(Object.keys(result).sort(), ["answer", "responses", "usage", "token_usage", "metadata", "latency_ms", "timings", "model"].sort());
 });
 
 test("fallback and direct answers use the expected chains", async () => {
