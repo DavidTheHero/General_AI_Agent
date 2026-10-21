@@ -18,7 +18,7 @@ ollama pull llama3.1:8b-instruct-q4_K_M
 npm run dev
 ```
 
-`npm run dev` starts Express on port 2610 and React on 2611. Start Ollama separately. `npm test` runs backend and React tests without a live model. `npm run build` bundles React into `frontend/dist/`; `npm start` serves the API and built UI on port 2610.
+`npm run up` starts Express, React and the Trading runtime together, reusing a reachable Ollama server or starting a local one. It loads `.env`; dependency installation and model downloads remain one-time setup. Ctrl+C stops its owned services through the runtime's parent-pipe shutdown. `npm run dev` starts Express on port 2610 and React on 2611 with API hot reload; start Ollama and Trading separately in that mode. `npm test` runs backend and React tests without a live model. `npm run build` bundles React into `frontend/dist/`; `npm start` serves the API and built UI on port 2610.
 
 ## Coding Style & Naming Conventions
 

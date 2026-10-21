@@ -4,7 +4,15 @@ A Node.js backend and React chat frontend powered by LangChain.js and local Olla
 
 ## Quick Start
 
-Requirements: Node.js **22.13+** (24 LTS recommended), npm, and a running [Ollama](https://ollama.com/) server. Finance tools also require Python **3.11+** for the local `yfinance` MCP server.
+After the one-time setup below, start the complete app from the repository folder with:
+
+```bash
+npm run up
+```
+
+Open **http://localhost:2611** for chat and the Trading desk. This command starts the API, frontend and Trading runtime, reuses a reachable Ollama server, or starts `ollama serve` when the configured local server is unavailable. Keep the terminal open; **Ctrl+C** stops the services it started and allows the Trading runtime to close its jobs. An existing Ollama server is left running. If a service exits, the other owned services stop too. Services share this terminal's output.
+
+Requirements for one-time setup: Node.js **22.13+** (24 LTS recommended), npm, and [Ollama](https://ollama.com/) installed locally or running on the configured remote host. Finance and Trading tools require Python **3.11+**. Dependency installation and model downloads are not repeated by `npm run up`.
 
 macOS / Linux:
 
@@ -15,7 +23,7 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -e '.[mcp]'
 cp .env.example .env
 ollama pull llama3.1:8b-instruct-q4_K_M
-npm run dev
+npm run up
 ```
 
 Windows PowerShell (Node 24 and Python 3.12 were used for verification):
@@ -29,16 +37,16 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e '.[mcp]'
 if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 ollama pull llama3.1:8b-instruct-q4_K_M
-npm run dev
+npm run up
 ```
 
 Use an installed Python 3.11+ executable instead of `py -3.12` if the Windows Python launcher is unavailable. Check versions in the terminal you will use: an older `node` or `python` earlier on PATH does not satisfy the requirements. No virtual-environment activation or execution-policy change is needed. If you already have `.venv`, verify its interpreter and packages instead of recreating it. Some environments provisioned with uv lack pip; use your existing package manager or bootstrap pip with that environment's `python -m ensurepip --upgrade` before using the pip commands.
 
-Start `npm run trading:runtime` in another terminal for the Trading desk. See [Windows foreground deployment and shutdown](deploy/README.md#windows-foreground-operation), the [initial platform verification record](docs/WINDOWS_REVIEW.md), and the [independent follow-up](docs/PEER_WINDOWS_REVIEW.md#lead-follow-up-win-02-f1-correction-and-independent-verification). Fresh Windows dependency installation in paths containing spaces and the final Windows checks passed in the follow-up. Current hosted Windows, macOS and minimum-version results and delivery status are recorded in [Windows delivery PR #9](https://github.com/DavidTheHero/General_AI_Agent/pull/9). Hosted application checks do not verify service installation.
+`npm run up` includes the Trading runtime. See [Windows foreground deployment and shutdown](deploy/README.md#windows-foreground-operation), the [initial platform verification record](docs/WINDOWS_REVIEW.md), and the [independent follow-up](docs/PEER_WINDOWS_REVIEW.md#lead-follow-up-win-02-f1-correction-and-independent-verification). Fresh Windows dependency installation in paths containing spaces and the final Windows checks passed in the follow-up. Current hosted Windows, macOS and minimum-version results and delivery status are recorded in [Windows delivery PR #9](https://github.com/DavidTheHero/General_AI_Agent/pull/9). Hosted application checks do not verify service installation.
 
-Start Ollama separately with `ollama serve` if it is not already running. Open **http://localhost:2611**. Express runs on port 2610; Vite proxies the React frontend's API requests to it. Only the backend talks to Ollama and external tool services.
+Express runs on port 2610; Vite proxies the React frontend's API requests to it. Only the backend talks to Ollama and external tool services. If `OLLAMA_HOST` points to a remote host, start Ollama there first. Wait for a newly started local Ollama server to finish starting before sending chat requests. A missing executable or Python dependency requires completing the one-time setup above.
 
-For separate development processes:
+For API hot reload, `npm run dev` keeps its existing API/frontend-only behavior; start Ollama and the Trading runtime separately in that mode. For separate development processes:
 
 ```bash
 npm run dev:backend
@@ -59,7 +67,7 @@ The CLI prints the generated `report.html` path. See the [framework guide](tradi
 
 ## Trading MCP, Runtime & Dashboard
 
-Start the independent runtime in another terminal, alongside `npm run dev`:
+`npm run up` starts the runtime automatically. When using `npm run dev` or running the runtime independently, use another terminal:
 
 ```bash
 npm run trading:runtime
