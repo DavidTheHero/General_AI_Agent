@@ -55,6 +55,8 @@ npm run dev:frontend
 
 ## Connect a Docker model on either computer
 
+Model context uses a small relevant toolset plus on-demand `tool_search` discovery. Schemas and domain instructions load only when needed; complete single-request reports return directly. See [context engineering](docs/CONTEXT_ENGINEERING.md) for the discovery contract, limits and evaluation method.
+
 Set these values in the local `.env`, then restart `npm run up`:
 
 ```dotenv

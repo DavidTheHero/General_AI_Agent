@@ -7,6 +7,7 @@ import { packageTools } from "./finance/client.js";
 import { createMemory, rememberComparison, rememberSymbols } from "./memory.js";
 import { createTools, extractDays, extractSymbols, quoteConversionTarget } from "./tools.js";
 import { tradingInputs, tradingDescriptions } from "./trading/client.js";
+import { createToolContext, toolSearchInput } from "./context.js";
 
 const signed = (value) => `${value >= 0 ? "+" : ""}${value.toFixed(2)}`;
 const broadMarket = (query) => /\b(?:stock market|market overview|market brief|market benchmarks)\b/i.test(query)
@@ -115,7 +116,32 @@ export function createAgent({ chains = createChains(), tools = createTools(), st
                 const available = new Set([...applications, ...mcpNames.map((name) => `mcp.${name}`)]);
                 if (trading && !companyBrief) for (const name of Object.keys(tradingInputs)) available.add(name);
                 let catalog = null;
-                const discovered = [];
+                const toolMetadata = [...available].map(name => ({ name,
+                    keywords: ({ trading_start: 'demo simulate simulation backtest replay watch', calculator: 'calculate multiply divide add subtract numbers' })[name] || '',
+                    description:
+                    Object.hasOwn(tradingInputs, name) ? tradingDescriptions[name] : name.startsWith('mcp.') ?
+                        ({ search_stocks: 'Search Yahoo company stocks by name and country',
+                            ticker_data: 'Yahoo company metadata financial statements news dividends estimates holders',
+                            search_finance: 'Search Yahoo Finance news headlines quotes and companies',
+                            lookup_instruments: 'Find company stock listings by name category and exchange',
+                        }[name.slice(4)] || `Yahoo Finance ${name.slice(4).replaceAll('_', ' ')}`) :
+                        toolCatalog[name] + (name === 'finance_workspace' ? ' Yahoo market news headlines today.' : ''),
+                }));
+                const toolContext = createToolContext(toolMetadata, async entry => {
+                    const name = entry.name;
+                    if (Object.hasOwn(tradingInputs, name)) return { ...entry, input_schema: tradingInputs[name].toJSONSchema({ io: 'input' }) };
+                    if (name.startsWith('mcp.')) {
+                        catalog ||= await tools.financeCatalog();
+                        const definition = catalog.find(item => item.name === name.slice(4));
+                        if (!definition) throw new Error(`MCP tool ${name} is unavailable.`);
+                        return { ...entry, input_schema: definition.inputSchema };
+                    }
+                    return { ...entry, input_schema: name === 'resolve_company' ? companyRequest.toJSONSchema({ io: 'input' }) :
+                        name === 'finance_workspace' ? workspaceRequest.toJSONSchema({ io: 'input' }) : applicationToolSchema(name) };
+                });
+                toolContext.search(segment);
+                available.add('tool_search');
+                let searchScope = [...available];
                 const inspectedCompanies = new Set();
                 const candidates = new Map();
                 function plannerTools(observations) {
@@ -132,19 +158,19 @@ export function createAgent({ chains = createChains(), tools = createTools(), st
                     return names;
                 }
                 const loop = await runAgentLoop({
-                    availableTools: available, requireReport: companyBrief, finishOnReport: companyBrief || Boolean(marketRequest),
+                    availableTools: available, requireReport: companyBrief,
+                    finishOnReport: companyBrief || Boolean(marketRequest) ||
+                        (/\b(?:news|brief|report|overview|dashboard)\b/i.test(segment) &&
+                            !/\b(?:and|also|then|plus|after|explain|analyse|analyze|interpret)\b|[,;]/i.test(segment)),
                     seed: marketRequest ? { action: "tool", tool: "finance_workspace", arguments: marketRequest } : conversionTarget ? { action: "tool", tool: "currency_convert", arguments: { target_currency: conversionTarget } } : null,
-                    choose: (observations, remaining) => {
-                        const names = plannerTools(observations);
-                        const descriptors = names.map((name) => Object.hasOwn(tradingInputs, name) ? {
-                            name, description: tradingDescriptions[name], input_schema: tradingInputs[name].toJSONSchema({ io: "input" }),
-                        } : name.startsWith("mcp.") ? {
-                            name, description: name === "mcp.search_stocks" ? "Search a company by query. Include country in the query text, not a separate argument." : "Yahoo Finance MCP data tool",
-                            input_schema: discovered.find((item) => `mcp.${item.name}` === name)?.inputSchema || (name === "mcp.search_stocks" ? { type: "object", properties: { query: { type: "string" } }, required: ["query"], additionalProperties: false } : null),
-                        } : { name, description: toolCatalog[name], input_schema: name === "resolve_company" ? companyRequest.toJSONSchema({ io: "input" }) : name === "finance_workspace" ?
-                            companyBrief ? { type: "object", properties: { workflow: { const: "research" }, symbol: { type: "string" } }, required: ["workflow", "symbol"] } : workspaceRequest.toJSONSchema({ io: "input" }) : applicationToolSchema(name) });
+                    choose: async (observations, remaining) => {
+                        const permitted = plannerTools(observations);
+                        searchScope = permitted;
+                        const packet = await toolContext.packet(permitted, companyBrief ? permitted : []);
+                        const descriptors = companyBrief ? packet.tools.filter(tool => tool.name !== 'tool_search') : packet.tools;
+                        const names = descriptors.map(tool => tool.name);
                         return call("lm_loop_decision", chains.loop, loopStepSchema, {
-                            query: segment, context: JSON.stringify({ recent_messages: recentMessages, memory, company_candidates: [...candidates.values()], inspected_symbols: [...inspectedCompanies] }), reference_date: referenceDate, timezone,
+                            query: segment, context: JSON.stringify({ recent_messages: recentMessages, memory, company_candidates: [...candidates.values()], inspected_symbols: [...inspectedCompanies], unavailable_tools: packet.unavailable }), reference_date: referenceDate, timezone,
                             allowed_tools: names, allowed_actions: companyBrief && !observations.length ? ["tool", "clarify"] : names.length ? ["tool", "finish", "clarify"] : ["finish", "clarify"], available_tools: JSON.stringify(descriptors), observations: JSON.stringify(observations), remaining_steps: remaining,
                         });
                     },
@@ -152,6 +178,10 @@ export function createAgent({ chains = createChains(), tools = createTools(), st
                         memory.conversation_context.last_tool = name;
                         usage[name] = (usage[name] || 0) + 1;
                         return profile(`tool_${name}`, async () => {
+                            if (name === 'tool_search') return {
+                                tools: toolContext.search(toolSearchInput.parse(args).query, searchScope),
+                                note: 'Matching schemas are loaded for your next decision. Search a different capability or exact tool name if needed.',
+                            };
                             if (Object.hasOwn(tradingInputs, name)) {
                                 const result = await trading.call(name, tradingInputs[name].parse(args));
                                 if (result.id) {
@@ -173,9 +203,6 @@ export function createAgent({ chains = createChains(), tools = createTools(), st
                                 catalog ||= await tools.financeCatalog();
                                 const definition = catalog.find((item) => item.name === toolName);
                                 if (!definition) throw new Error(`MCP tool ${toolName} is unavailable.`);
-                                for (const item of catalog.filter((item) => item.name === toolName || (["search_stocks", "lookup_instruments"].includes(toolName) && item.name === "ticker_data"))) {
-                                    if (!discovered.some((known) => known.name === item.name)) discovered.push(item);
-                                }
                                 if (companyBrief && toolName === "ticker_data" && !candidates.has(String(args.symbol).toUpperCase())) throw new Error("This ticker was not returned by company discovery. An empty search does not verify a raw acronym. Try a full company name or lookup_instruments category stock first.");
                                 const result = await tools.financeCall(toolName, args);
                                 if (toolName === "search_stocks" || toolName === "lookup_instruments") {
