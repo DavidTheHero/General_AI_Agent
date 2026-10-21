@@ -7,6 +7,7 @@
     "node": ">=22.13.0"
   },
   "scripts": {
+    "up": "node --env-file-if-exists=.env scripts/up.mjs",
     "dev": "concurrently -k -n api,ui \"npm run dev:backend\" \"npm run dev:frontend\"",
     "dev:backend": "node --env-file-if-exists=.env --watch backend/server.js",
     "dev:frontend": "vite --config frontend/vite.config.js",
